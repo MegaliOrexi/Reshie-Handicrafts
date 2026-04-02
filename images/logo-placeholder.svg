@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 60" fill="none">
+  <!-- Decorative diamond motif -->
+  <polygon points="30,10 40,30 30,50 20,30" fill="none" stroke="#c9a96e" stroke-width="1.5"/>
+  <polygon points="30,17 37,30 30,43 23,30" fill="#c9a96e" opacity="0.25"/>
+  <!-- Brand initials -->
+  <text x="50" y="26" font-family="Georgia,serif" font-size="13" fill="#c9a96e" font-style="italic" letter-spacing="1">Reshie</text>
+  <text x="50" y="44" font-family="Georgia,serif" font-size="9" fill="#c9a96e" letter-spacing="2.5">NOVELTIES</text>
+  <!-- bottom rule -->
+  <line x1="50" y1="49" x2="158" y2="49" stroke="#c9a96e" stroke-width="0.6" opacity="0.5"/>
+</svg>
