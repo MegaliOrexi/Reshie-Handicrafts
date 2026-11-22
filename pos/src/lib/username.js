@@ -2,7 +2,7 @@
 // Supabase Auth still needs an email, so a username is stored as
 // "<username>@<STAFF_DOMAIN>". Anything containing "@" is used as-is (owner).
 // No mail is ever sent to these addresses (users are created with auto-confirm).
-export const STAFF_DOMAIN = 'staff.reshiehandicrafts.com'
+export const STAFF_DOMAIN = 'reshiehandicrafts.com'
 
 export const toLoginEmail = (input) => {
   const v = input.trim().toLowerCase()
