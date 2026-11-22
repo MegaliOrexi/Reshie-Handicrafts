@@ -3,6 +3,7 @@ import { getSettings, saveSettings } from '../lib/settings'
 import { qzAvailable, listPrinters, printReceipt, printMethod, isAndroid } from '../lib/print'
 import { buildReceipt } from '../lib/receipt'
 import { useAuth } from '../lib/AuthContext'
+import { displayLogin } from '../lib/username'
 
 export default function Settings() {
   const { shop, profile } = useAuth()
@@ -32,7 +33,7 @@ export default function Settings() {
   const testPrint = async () => {
     const sale = { receipt_no: `${shop.code}-TEST`, created_at: new Date().toISOString(), payment_method: 'cash', gross_total: 210, net_total: 200, vat_total: 10 }
     const items = [{ item_name: 'Shawl', variation_code: 'TEST', qty: 1, unit_price: 210, line_gross: 210, line_net: 200, line_vat: 10 }]
-    const { via } = await printReceipt(buildReceipt({ sale, items, shop, cashierName: profile?.full_name || profile?.email }))
+    const { via } = await printReceipt(buildReceipt({ sale, items, shop, cashierName: profile?.full_name || displayLogin(profile?.email) }))
     setMsg(via === 'qz' ? 'Test receipt sent to QZ Tray.' : via === 'rawbt' ? 'Test receipt sent to RawBT.' : 'Printed via browser dialog.')
   }
 

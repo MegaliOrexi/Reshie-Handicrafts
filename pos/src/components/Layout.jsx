@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
+import { displayLogin } from '../lib/username'
 import { shopLabel } from '../lib/shop'
 
 export default function Layout() {
@@ -26,7 +27,7 @@ export default function Layout() {
           <NavLink to="/settings">Printer</NavLink>
         </nav>
         <div className="user">
-          <span className="user-name">{profile?.full_name || profile?.email}</span>
+          <span className="user-name">{profile?.full_name || displayLogin(profile?.email)}</span>
           <span className={`badge ${isOwner ? 'badge-gold' : ''}`}>{profile?.role}</span>
           {shops.length > 1 && (
             <button className="btn btn-ghost btn-sm" onClick={() => nav('/shop')}>Switch shop</button>

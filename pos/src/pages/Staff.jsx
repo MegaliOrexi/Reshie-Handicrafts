@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { shopNo } from '../lib/shop'
+import { STAFF_DOMAIN, displayLogin } from '../lib/username'
 
 export default function Staff() {
   const { user } = useAuth()
@@ -39,13 +40,14 @@ export default function Staff() {
     <div className="card">
       <h2>Staff</h2>
       <p className="muted">
-        To add a cashier: Supabase → Authentication → Users → <b>Add user</b> (email + password, tick auto-confirm).
-        They will appear here automatically. Then tick the shop(s) they may sell at.
+        To add a cashier: Supabase → Authentication → Users → <b>Add user</b> → <b>Create new user</b>.
+        For a short username like <b>ali</b>, enter the email <b>ali@{STAFF_DOMAIN}</b> (+ a password, min 6 characters, tick auto-confirm).
+        They then log in with just <b>ali</b> and the password. They will appear here automatically — tick the shop(s) they may sell at.
       </p>
       {err && <p className="error">{err}</p>}
       <table className="table">
         <thead>
-          <tr><th>Name</th><th>Email</th><th>Role</th>{shops.map((s) => <th key={s.id} className="c">{shopNo(s)}</th>)}<th>Active</th></tr>
+          <tr><th>Name</th><th>Login</th><th>Role</th>{shops.map((s) => <th key={s.id} className="c">{shopNo(s)}</th>)}<th>Active</th></tr>
         </thead>
         <tbody>
           {profiles.map((p) => {
@@ -54,7 +56,7 @@ export default function Staff() {
             return (
               <tr key={p.id} className={p.active ? '' : 'dim'}>
                 <td><input className="inline" defaultValue={p.full_name || ''} onBlur={(e) => e.target.value !== (p.full_name || '') && patch(p.id, { full_name: e.target.value })} /></td>
-                <td className="small">{p.email}{me && ' (you)'}</td>
+                <td className="small">{displayLogin(p.email)}{me && ' (you)'}</td>
                 <td>
                   <select value={p.role} disabled={me} onChange={(e) => patch(p.id, { role: e.target.value })}>
                     <option value="cashier">cashier</option>

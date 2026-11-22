@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/AuthContext'
+import { displayLogin } from '../lib/username'
 import DayGate from '../components/DayGate'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/vat'
@@ -40,7 +41,7 @@ function List({ session }) {
 
   const reprint = (s) => {
     // Cashiers can only read their own profile row, so another cashier's name may be hidden by RLS
-    const receipt = buildReceipt({ sale: s, items: s.sale_items, shop, cashierName: s.profiles?.full_name || s.profiles?.email || (s.cashier_id === profile?.id ? profile?.email : 'Staff') })
+    const receipt = buildReceipt({ sale: s, items: s.sale_items, shop, cashierName: s.profiles?.full_name || displayLogin(s.profiles?.email) || (s.cashier_id === profile?.id ? displayLogin(profile?.email) : 'Staff') })
     printReceipt(receipt, { shopId: shop.id, receiptNo: s.receipt_no, reprint: true })
   }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../lib/AuthContext'
+import { toLoginEmail } from '../lib/username'
 
 export default function Login() {
   const { signIn } = useAuth()
@@ -11,8 +12,8 @@ export default function Login() {
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true); setErr('')
-    const { error } = await signIn(email.trim(), password)
-    if (error) setErr(error.message)
+    const { error } = await signIn(toLoginEmail(email), password)
+    if (error) setErr(/invalid login/i.test(error.message) ? 'Wrong username or password.' : error.message)
     setBusy(false)
   }
 
@@ -23,8 +24,8 @@ export default function Login() {
         <h1>Reshie POS</h1>
         <p className="muted">Staff login</p>
         <label className="field">
-          <span>Email</span>
-          <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          <span>Username</span>
+          <input type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label className="field">
           <span>Password</span>

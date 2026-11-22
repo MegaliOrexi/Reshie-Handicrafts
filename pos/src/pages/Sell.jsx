@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../lib/AuthContext'
+import { displayLogin } from '../lib/username'
 import DayGate from '../components/DayGate'
 import { supabase } from '../lib/supabase'
 import { cachedItems, fetchItems } from '../lib/items'
@@ -82,7 +83,7 @@ function SellScreen({ session }) {
       // through (3G blip, eGoal down) the server retries it every 10 minutes.
       supabase.functions.invoke('egoal-export', { body: { sale_id: sale.id } }).catch(() => {})
       const { data: saleItems } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id).order('id')
-      const receipt = buildReceipt({ sale, items: saleItems || [], shop, cashierName: profile?.full_name || profile?.email })
+      const receipt = buildReceipt({ sale, items: saleItems || [], shop, cashierName: profile?.full_name || displayLogin(profile?.email) })
       setDone({ sale, items: saleItems || [], receipt })
       setCart([])
       clientRef.current = newId()
