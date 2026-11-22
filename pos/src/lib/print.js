@@ -68,6 +68,23 @@ export function rawbtPrint(raw, meta = {}) {
   // Receipt text is plain ASCII + ESC/POS control bytes, so btoa() is safe.
   const b64 = btoa(raw)
   logPrint(meta, 'rawbt')
+
+  // If RawBT opens, this page loses focus / gets hidden. If nothing happens within ~2.5 s the
+  // intent went nowhere (RawBT missing, or a browser that ignores intents) — say so, don't fail silently.
+  let left = false
+  const onLeave = () => { left = true }
+  window.addEventListener('blur', onLeave, { once: true })
+  document.addEventListener('visibilitychange', onLeave, { once: true })
+  setTimeout(() => {
+    window.removeEventListener('blur', onLeave)
+    document.removeEventListener('visibilitychange', onLeave)
+    if (!left) {
+      alert('RawBT did not open.\n\n• Make sure the RawBT app is installed and set up (Bluetooth/USB, ESC/POS).\n' +
+        '• Open the POS in Chrome (not the Huawei/Samsung browser).\n' +
+        '• Or change Print method on the Printer page to "Browser print dialog".')
+    }
+  }, 2500)
+
   window.location.href = `intent:base64,${b64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`
 }
 
@@ -112,9 +129,60 @@ function logPrint(meta, via, printer = null, qzError = null) {
   })
 }
 
+/**
+ * Android/mobile browsers ignore print() called inside an iframe, so there we print the main
+ * page itself: the receipt is put in #rp-root and a print-only stylesheet hides the rest of the app.
+ */
+function inPagePrint(html) {
+  document.getElementById('rp-root')?.remove()
+  document.getElementById('rp-style')?.remove()
+
+  const src = new DOMParser().parseFromString(html, 'text/html')
+  const css = [...src.querySelectorAll('style')].map((s) => s.textContent).join('\n')
+    .replace(/(^|[\s;}])html\s*\{[^}]*\}/g, '$1')
+    .replace(/(^|[\s;}])body\s*\{/g, '$1#rp-root {')
+
+  const root = document.createElement('div')
+  root.id = 'rp-root'
+  root.innerHTML = src.body.innerHTML
+  document.body.appendChild(root)
+
+  const style = document.createElement('style')
+  style.id = 'rp-style'
+  // On screen: rendered off-screen (so it can be measured). In print: the only thing on the page.
+  style.textContent = `
+    #rp-root { position: absolute; left: -10000px; top: 0; background: #fff; }
+    @media print {
+      body > *:not(#rp-root) { display: none !important; }
+      html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; height: auto !important; }
+      ${css}
+      #rp-root { position: static !important; left: auto !important; }
+    }`
+  document.head.appendChild(style)
+
+  // Page = exactly the receipt (roll width × real length), measured with the receipt styles applied.
+  const pxToMm = 25.4 / 96
+  const probe = document.createElement('style')
+  probe.textContent = css.replace(/@page\s*\{[^}]*\}/g, '')
+  document.head.appendChild(probe)
+  const wMm = Math.round(root.getBoundingClientRect().width * pxToMm) || 72
+  const hMm = Math.ceil(root.scrollHeight * pxToMm) + 2
+  probe.remove()
+  style.textContent += `\n@media print { @page { size: ${wMm}mm ${hMm}mm; margin: 0; } }`
+
+  const cleanup = () => { root.remove(); style.remove() }
+  window.addEventListener('afterprint', () => setTimeout(cleanup, 500), { once: true })
+  setTimeout(cleanup, 120000)
+  window.print()
+}
+
 export function browserPrint(receipt, meta = {}, qzError = null) {
   const { html } = asReceipt(receipt)
   logPrint(meta, 'browser', null, qzError)
+  if (isAndroid() || /iPhone|iPad/i.test(navigator.userAgent || '')) {
+    try { inPagePrint(html) } catch (e) { alert('Could not open the print dialog: ' + (e?.message || e)) }
+    return
+  }
   // Print from a hidden iframe (no pop-up to be blocked). We must NOT remove it right after
   // print(): on Edge/Chrome/Android print() can return immediately, and tearing the frame
   // down kills the dialog before it appears. Clean up on 'afterprint' (or after 2 min).
