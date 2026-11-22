@@ -4,6 +4,9 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { AuthProvider } from './lib/AuthContext'
 import './styles.css'
+import { keepFocusedFieldVisible } from './lib/keyboard'
+
+keepFocusedFieldVisible()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

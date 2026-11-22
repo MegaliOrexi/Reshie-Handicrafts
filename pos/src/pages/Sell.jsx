@@ -150,7 +150,7 @@ function SellScreen({ session }) {
           </label>
           <label className="field field-qty">
             <span>Qty</span>
-            <input type="number" min="1" step="1" value={line.qty} onChange={(e) => setLine({ ...line, qty: e.target.value })} disabled={closed} />
+            <input type="number" inputMode="numeric" min="1" step="1" value={line.qty} onChange={(e) => setLine({ ...line, qty: e.target.value })} disabled={closed} />
           </label>
           <button className="btn btn-primary" disabled={!lineValid || closed}>Add</button>
         </form>

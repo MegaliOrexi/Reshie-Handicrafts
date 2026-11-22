@@ -109,7 +109,7 @@ Offline mode is **explicitly out of scope** for v1 (may revisit later). Internet
 
 WTC is two eGoal units → two POS shops, each with its own day/cash/receipts. **Sharjah (Central Souq) was removed from the POS** on 2026-11-17 (deactivated in `schema.sql`, not deleted). The marketing site's shop list is unchanged.
 
-Business name on receipts is per shop (`shops.legal_name`): **RAK = Reshie Nov. & Gifts LLC**; AUH/AUH2 = **Reshie Antiques & Gifts** (brand header "Reshie Handicrafts" on all).
+Business name on receipts is per shop (`shops.legal_name`): **RAK = Reshie Nov. & Gifts LLC**; AUH/AUH2 = **Reshie Antiques & Gifts**. The legal name is the receipt title (no "Reshie Handicrafts" brand line), followed by one address line (`shops.address`, falling back to `location`).
 Contact: reshiehandcrafts@gmail.com · +971 50 626 3796 · @reshiehandicrafts
 
 ---

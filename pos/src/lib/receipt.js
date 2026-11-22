@@ -9,12 +9,16 @@ import { getSettings } from './settings'
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
+/** One address line: the full address if set, otherwise the short location (never both). */
+const shopAddress = (shop) => shop?.address || shop?.location || ''
+
 const money = (n) => Number(n || 0).toFixed(2)
 
 const dateText = (sale) =>
   new Date(sale.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Dubai', hour12: false })
 
-/** Registered company name for this shop's receipts (shops.legal_name; RAK is a separate LLC). */
+/** Registered company name for this shop's receipts (shops.legal_name; RAK is a separate LLC).
+ *  It is the receipt's title — the "Reshie Handicrafts" brand name is not printed. */
 const companyName = (shop) => shop?.legal_name || 'Reshie Antiques & Gifts'
 
 /** Printable width of the roll in mm (80 mm roll → 72 mm, 58 mm roll → 48 mm). */
@@ -90,13 +94,11 @@ export function receiptEscPos({ sale, items, shop, cashierName }) {
   out.push(CMD.init, CMD.codepage437, CMD.center)
 
   // Header
-  const title = 'RESHIE HANDICRAFTS'
+  const title = ascii(companyName(shop)).toUpperCase()
   out.push(CMD.boldOn, title.length * 2 <= W ? CMD.big : CMD.tall)
-  line(title)
+  wrap(title, title.length * 2 <= W ? W / 2 : W).forEach((l) => line(l))
   out.push(CMD.normal, CMD.boldOff)
-  center(companyName(shop))
-  if (shop.location) center(shop.location)
-  if (shop.address) center(shop.address)
+  center(shopAddress(shop))
   if (shop.phone) center(`Tel: ${shop.phone}`)
   out.push(CMD.boldOn)
   center(`TRN: ${shop.trn || 'TRN-PENDING'}`)
@@ -181,10 +183,8 @@ export function receiptHtml({ sale, items, shop, cashierName }) {
 </style></head>
 <body>
   <div class="c">
-    <h1>RESHIE HANDICRAFTS</h1>
-    <div class="sm">${esc(companyName(shop))}</div>
-    <div class="sm">${esc(shop.location)}</div>
-    ${shop.address ? `<div class="sm">${esc(shop.address)}</div>` : ''}
+    <h1>${esc(companyName(shop).toUpperCase())}</h1>
+    <div class="sm">${esc(shopAddress(shop))}</div>
     ${shop.phone ? `<div class="sm">Tel: ${esc(shop.phone)}</div>` : ''}
     <div class="sm b">TRN: ${esc(shop.trn || 'TRN-PENDING')}</div>
   </div>
