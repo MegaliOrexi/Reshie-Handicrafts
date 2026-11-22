@@ -42,21 +42,59 @@ export async function listPrinters() {
   return qz.printers.find()
 }
 
+// A receipt is { html, raw } from buildReceipt(); a bare HTML string is still accepted.
+const asReceipt = (r) => (typeof r === 'string' ? { html: r, raw: null } : r)
+
 /**
- * Print a receipt (HTML string). Returns { via: 'qz' | 'browser' }.
- * Falls back to the browser print dialog when QZ Tray isn't running.
+ * Print a receipt. Returns { via: 'qz' | 'rawbt' | 'browser' }.
+ * Android (or printMethod 'rawbt'): raw ESC/POS through the RawBT app.
+ * With QZ Tray: sends raw ESC/POS text (printer's own font — sharp, auto-cut, tiny payload),
+ * or the HTML rendering if no raw version was given. Otherwise: browser print dialog.
  */
+export const isAndroid = () => /Android/i.test(navigator.userAgent || '')
+
+/** Which method this device uses: 'qz' (PC), 'rawbt' (Android tablet/phone) or 'browser'. */
+export function printMethod() {
+  const { printMethod: m } = getSettings()
+  if (m && m !== 'auto') return m
+  return isAndroid() ? 'rawbt' : 'qz'
+}
+
+/**
+ * Android: hand the raw ESC/POS receipt to the RawBT app (it holds the Bluetooth link to the
+ * printer). Same sharp printer-font output as QZ Tray on a PC, no print dialog.
+ */
+export function rawbtPrint(raw, meta = {}) {
+  // Receipt text is plain ASCII + ESC/POS control bytes, so btoa() is safe.
+  const b64 = btoa(raw)
+  logPrint(meta, 'rawbt')
+  window.location.href = `intent:base64,${b64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`
+}
+
 // meta = { shopId, receiptNo, reprint } — used to log the print in event_logs
-export async function printReceipt(html, meta = {}) {
+export async function printReceipt(receipt, meta = {}) {
+  const { html, raw } = asReceipt(receipt)
   const { printerName } = getSettings()
+  const method = printMethod()
+  if (method === 'rawbt' && raw) {
+    rawbtPrint(raw, meta)
+    return { via: 'rawbt' }
+  }
+  if (method === 'browser') {
+    browserPrint(html, meta)
+    return { via: 'browser' }
+  }
   try {
     const qz = await connectQz()
     const printer = printerName ? await qz.printers.find(printerName) : await qz.printers.getDefault()
-    // Paper width is controlled by the receipt's own CSS (@page + body width);
-    // the printer driver's default roll size is used.
-    const config = qz.configs.create(printer, { units: 'mm', margins: 1, scaleContent: true })
-    await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }])
-    logPrint(meta, 'qz', printer)
+    if (raw) {
+      const config = qz.configs.create(printer)
+      await qz.print(config, [{ type: 'raw', format: 'command', flavor: 'plain', data: raw }])
+    } else {
+      const config = qz.configs.create(printer, { units: 'mm', margins: 0, scaleContent: true })
+      await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }])
+    }
+    logPrint(meta, raw ? 'qz-raw' : 'qz', printer)
     return { via: 'qz' }
   } catch (err) {
     console.warn('QZ Tray unavailable, using browser print:', err?.message || err)
@@ -74,20 +112,46 @@ function logPrint(meta, via, printer = null, qzError = null) {
   })
 }
 
-export function browserPrint(html, meta = {}, qzError = null) {
+export function browserPrint(receipt, meta = {}, qzError = null) {
+  const { html } = asReceipt(receipt)
   logPrint(meta, 'browser', null, qzError)
-  const w = window.open('', '_blank', 'width=420,height=700')
-  if (!w) {
-    alert('Pop-up blocked. Please allow pop-ups for this site to print.')
-    return
-  }
-  w.document.open()
-  w.document.write(html)
-  w.document.close()
-  w.focus()
-  // Give the browser a tick to lay out before printing
+  // Print from a hidden iframe (no pop-up to be blocked). We must NOT remove it right after
+  // print(): on Edge/Chrome/Android print() can return immediately, and tearing the frame
+  // down kills the dialog before it appears. Clean up on 'afterprint' (or after 2 min).
+  document.getElementById('receipt-print-frame')?.remove()
+  const frame = document.createElement('iframe')
+  frame.id = 'receipt-print-frame'
+  frame.setAttribute('aria-hidden', 'true')
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
+  document.body.appendChild(frame)
+
+  const doc = frame.contentWindow.document
+  doc.open()
+  doc.write(html)
+  doc.close()
+
+  let cleaned = false
+  const cleanup = () => { if (!cleaned) { cleaned = true; frame.remove() } }
+  frame.contentWindow.addEventListener('afterprint', () => setTimeout(cleanup, 500))
+  setTimeout(cleanup, 120000)
+
+  // Give the browser a moment to lay out (fonts/images) before printing
   setTimeout(() => {
-    w.print()
-    setTimeout(() => w.close(), 300)
-  }, 150)
+    try {
+      // Size the page to the receipt itself (printable roll width × real length, no margins),
+      // so the driver doesn't place a short receipt somewhere on a 297 mm "sheet".
+      const body = doc.body
+      const pxToMm = 25.4 / 96
+      const wMm = Math.round(body.getBoundingClientRect().width * pxToMm)
+      const hMm = Math.ceil(body.scrollHeight * pxToMm) + 2
+      const st = doc.createElement('style')
+      st.textContent = `@page { size: ${wMm}mm ${hMm}mm; margin: 0; } html, body { height: auto; }`
+      doc.head.appendChild(st)
+      frame.contentWindow.focus()
+      frame.contentWindow.print()
+    } catch (e) {
+      console.error('Browser print failed:', e)
+      alert('Could not open the print dialog: ' + (e?.message || e))
+    }
+  }, 300)
 }

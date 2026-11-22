@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { cachedItems, fetchItems } from '../lib/items'
 import { cartTotals, splitVat, fmt, round2 } from '../lib/vat'
 import { withRetry } from '../lib/retry'
-import { receiptHtml } from '../lib/receipt'
+import { buildReceipt } from '../lib/receipt'
 import { printReceipt, browserPrint } from '../lib/print'
 import { getSettings } from '../lib/settings'
 
@@ -82,14 +82,14 @@ function SellScreen({ session }) {
       // through (3G blip, eGoal down) the server retries it every 10 minutes.
       supabase.functions.invoke('egoal-export', { body: { sale_id: sale.id } }).catch(() => {})
       const { data: saleItems } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id).order('id')
-      const html = receiptHtml({ sale, items: saleItems || [], shop, cashierName: profile?.full_name || profile?.email })
-      setDone({ sale, items: saleItems || [], html })
+      const receipt = buildReceipt({ sale, items: saleItems || [], shop, cashierName: profile?.full_name || profile?.email })
+      setDone({ sale, items: saleItems || [], receipt })
       setCart([])
       clientRef.current = newId()
       setStatus({ busy: false, msg: '', error: '' })
       if (getSettings().autoPrint) {
-        const { via } = await printReceipt(html, { shopId: shop.id, receiptNo: sale.receipt_no })
-        setStatus({ busy: false, msg: via === 'qz' ? 'Receipt sent to printer.' : 'QZ Tray not found — used browser print.', error: '' })
+        const { via } = await printReceipt(receipt, { shopId: shop.id, receiptNo: sale.receipt_no })
+        setStatus({ busy: false, msg: via === 'qz' || via === 'rawbt' ? 'Receipt sent to printer.' : 'Used browser print.', error: '' })
       }
     } catch (err) {
       setStatus({ busy: false, msg: '', error: humanError(err) })
@@ -106,15 +106,15 @@ function SellScreen({ session }) {
           <p className="big">{fmt(done.sale.gross_total)} · {done.sale.payment_method.toUpperCase()}</p>
           {status.msg && <p className="muted">{status.msg}</p>}
           <div className="row gap center">
-            <button className="btn btn-ghost" onClick={() => printReceipt(done.html, { shopId: shop.id, receiptNo: done.sale.receipt_no, reprint: true })}>Print again</button>
-            <button className="btn btn-ghost" onClick={() => browserPrint(done.html, { shopId: shop.id, receiptNo: done.sale.receipt_no, reprint: true })}>Browser print</button>
+            <button className="btn btn-ghost" onClick={() => printReceipt(done.receipt, { shopId: shop.id, receiptNo: done.sale.receipt_no, reprint: true })}>Print again</button>
+            <button className="btn btn-ghost" onClick={() => browserPrint(done.receipt, { shopId: shop.id, receiptNo: done.sale.receipt_no, reprint: true })}>Browser print</button>
           </div>
           <button className="btn btn-primary btn-lg" autoFocus onClick={() => { setDone(null); setStatus({ busy: false, msg: '', error: '' }) }}>
             New sale
           </button>
         </div>
         <div className="card receipt-preview">
-          <iframe title="receipt" srcDoc={done.html} />
+          <iframe title="receipt" srcDoc={done.receipt.html} />
         </div>
       </div>
     )

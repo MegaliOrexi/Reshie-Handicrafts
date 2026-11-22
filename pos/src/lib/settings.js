@@ -3,9 +3,9 @@ const KEY = 'reshie-pos-settings'
 
 export function getSettings() {
   try {
-    return { printerName: '', autoPrint: true, paperWidthMm: 80, ...JSON.parse(localStorage.getItem(KEY) || '{}') }
+    return { printerName: '', autoPrint: true, paperWidthMm: 80, printMethod: 'auto', ...JSON.parse(localStorage.getItem(KEY) || '{}') }
   } catch {
-    return { printerName: '', autoPrint: true, paperWidthMm: 80 }
+    return { printerName: '', autoPrint: true, paperWidthMm: 80, printMethod: 'auto' }
   }
 }
 

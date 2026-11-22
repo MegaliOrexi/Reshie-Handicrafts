@@ -109,7 +109,7 @@ Offline mode is **explicitly out of scope** for v1 (may revisit later). Internet
 
 WTC is two eGoal units → two POS shops, each with its own day/cash/receipts. **Sharjah (Central Souq) was removed from the POS** on 2026-11-17 (deactivated in `schema.sql`, not deleted). The marketing site's shop list is unchanged.
 
-Business name on receipts: **Reshie Antiques & Gifts** (as registered with eGoal; brand header "Reshie Handicrafts").
+Business name on receipts is per shop (`shops.legal_name`): **RAK = Reshie Nov. & Gifts LLC**; AUH/AUH2 = **Reshie Antiques & Gifts** (brand header "Reshie Handicrafts" on all).
 Contact: reshiehandcrafts@gmail.com · +971 50 626 3796 · @reshiehandicrafts
 
 ---
@@ -174,7 +174,7 @@ Flow: `egoal-export` (cron) → our **`egoal-gateway`** (`/token`: email+passwor
 - [ ] **Run `pos/supabase/schema.sql`** in the Supabase SQL editor, create the owner user, set role = owner (see pos/README.md §1).
 - [ ] **Deploy** POS to Vercel (Root Directory = `pos`) + domain `pos.reshiehandicrafts.com`.
 - [ ] **Nightly jobs**: deploy the two Edge Functions, create `backups` bucket, run `pos/supabase/cron.sql`.
-- [ ] **TRN number(s)** per shop for receipts (placeholder until provided).
+- [x] **TRN** — received 2026-11-22: `100304794900003` (one company TRN, all shops; set in `schema.sql`).
 - [ ] **OK on the receipt header** (drafted from the site; user to tweak).
 - [ ] **QZ Tray install** on a test shop PC + the **printer's name** (to test real printing).
 - [x] **eGoal API docs** — received 2026-11-15 (Aldar invoice-wise sales API: https://aldar.egoalprime.com/apidocsv3/option2.html). Implemented in `pos/supabase/functions/_shared/egoal.ts`.

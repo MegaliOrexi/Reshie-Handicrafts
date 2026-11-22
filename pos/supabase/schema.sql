@@ -38,6 +38,8 @@ create table if not exists shops (
   active      boolean not null default true,
   created_at  timestamptz not null default now()
 );
+-- Registered company name printed on the receipt (differs per unit: RAK is a separate LLC).
+alter table shops add column if not exists legal_name text;
 -- eGoal (Aldar mall sales reporting) identifiers -- all four are issued by eGoal.
 -- Leave NULL for shops whose mall is not on eGoal: their export is marked 'skipped'.
 alter table shops add column if not exists egoal_concessionaire_code text;
@@ -635,18 +637,26 @@ grant  execute on function egoal_sale_payload(uuid) to service_role;
 -- ---------------------------------------------------------------------
 -- Shops = the three eGoal (Aldar) units, trading as Reshie Antiques & Gifts.
 insert into shops (code, name, location, trn, address, phone) values
-  ('RAK', 'Reshie Antiques & Gifts - Al Hamra Mall FF62', 'Al Hamra Mall, Ras Al Khaimah',      'TRN-PENDING', 'Unit FF62, Al Hamra Mall, Ras Al Khaimah, UAE',       '+971 50 626 3796'),
-  ('AUH', 'Reshie Antiques & Gifts - WTC Souq G-085',     'World Trade Centre Souq, Abu Dhabi', 'TRN-PENDING', 'Unit G-085, World Trade Centre Souk, Abu Dhabi, UAE', '+971 50 626 3796'),
-  ('AUH2','Reshie Antiques & Gifts - WTC Souq G-050',     'World Trade Centre Souq, Abu Dhabi', 'TRN-PENDING', 'Unit G-050, World Trade Centre Souk, Abu Dhabi, UAE', '+971 50 626 3796')
+  ('RAK', 'Reshie Nov. & Gifts LLC - Al Hamra Mall FF62', 'Al Hamra Mall, Ras Al Khaimah',      '100304794900003', 'Unit FF62, Al Hamra Mall, Ras Al Khaimah, UAE',       '+971 50 626 3796'),
+  ('AUH', 'Reshie Antiques & Gifts - WTC Souq G-085',     'World Trade Centre Souq, Abu Dhabi', '100304794900003', 'Unit G-085, World Trade Centre Souk, Abu Dhabi, UAE', '+971 50 626 3796'),
+  ('AUH2','Reshie Antiques & Gifts - WTC Souq G-050',     'World Trade Centre Souq, Abu Dhabi', '100304794900003', 'Unit G-050, World Trade Centre Souk, Abu Dhabi, UAE', '+971 50 626 3796')
 on conflict (code) do nothing;
+
+-- Company TRN (same for all units). Only replaces the placeholder, never a TRN set by hand.
+update shops set trn = '100304794900003' where trn is null or trn = 'TRN-PENDING';
 
 -- If an older seed already ran: apply the current names/addresses, and retire Sharjah
 -- (deactivated, not deleted, so any history stays intact; inactive shops are hidden + not exported).
-update shops set name = 'Reshie Antiques & Gifts - Al Hamra Mall FF62', location = 'Al Hamra Mall, Ras Al Khaimah',
+update shops set name = 'Reshie Nov. & Gifts LLC - Al Hamra Mall FF62', location = 'Al Hamra Mall, Ras Al Khaimah',
                  address = 'Unit FF62, Al Hamra Mall, Ras Al Khaimah, UAE' where code = 'RAK';
 update shops set name = 'Reshie Antiques & Gifts - WTC Souq G-085', location = 'World Trade Centre Souq, Abu Dhabi',
                  address = 'Unit G-085, World Trade Centre Souk, Abu Dhabi, UAE' where code = 'AUH';
 update shops set active = false where code = 'SHJ';
+
+-- Registered company name per unit (printed on receipts). Al Hamra is its own LLC.
+update shops set legal_name = 'Reshie Nov. & Gifts LLC',
+                 name = 'Reshie Nov. & Gifts LLC - Al Hamra Mall FF62' where code = 'RAK';
+update shops set legal_name = 'Reshie Antiques & Gifts' where code in ('AUH', 'AUH2') and legal_name is null;
 
 -- eGoal (Aldar) unit codes — issued by eGoal 2026-11. Not secret (the x-api-key is, and lives in
 -- Supabase secrets).

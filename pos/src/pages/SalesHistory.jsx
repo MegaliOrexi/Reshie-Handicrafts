@@ -3,7 +3,7 @@ import { useAuth } from '../lib/AuthContext'
 import DayGate from '../components/DayGate'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/vat'
-import { receiptHtml } from '../lib/receipt'
+import { buildReceipt } from '../lib/receipt'
 import { printReceipt } from '../lib/print'
 
 export default function SalesHistory() {
@@ -26,10 +26,22 @@ function List({ session }) {
   }
   useEffect(() => { load() }, [session.id])
 
+  // Re-send one failed sale to eGoal now (the server would also retry it every 10 minutes).
+  const [resending, setResending] = useState({})
+  const resend = async (s) => {
+    setResending((r) => ({ ...r, [s.id]: true }))
+    const { data, error } = await supabase.functions.invoke('egoal-export', { body: { sale_id: s.id } })
+    setResending((r) => ({ ...r, [s.id]: false }))
+    const res = (data?.results || [])[0]
+    if (error || !res) alert(`Resend failed: ${error?.message || data?.error || 'sale is already being sent — refresh in a moment'}`)
+    else if (res.egoal_status !== 'sent') alert(`eGoal still failing: ${res.egoal_error || res.egoal_status}`)
+    load()
+  }
+
   const reprint = (s) => {
     // Cashiers can only read their own profile row, so another cashier's name may be hidden by RLS
-    const html = receiptHtml({ sale: s, items: s.sale_items, shop, cashierName: s.profiles?.full_name || s.profiles?.email || (s.cashier_id === profile?.id ? profile?.email : 'Staff') })
-    printReceipt(html, { shopId: shop.id, receiptNo: s.receipt_no, reprint: true })
+    const receipt = buildReceipt({ sale: s, items: s.sale_items, shop, cashierName: s.profiles?.full_name || s.profiles?.email || (s.cashier_id === profile?.id ? profile?.email : 'Staff') })
+    printReceipt(receipt, { shopId: shop.id, receiptNo: s.receipt_no, reprint: true })
   }
 
   if (err) return <p className="error">{err}</p>
@@ -54,7 +66,14 @@ function List({ session }) {
                 <td className="r">{Number(s.net_total).toFixed(2)}</td>
                 <td className="r">{Number(s.vat_total).toFixed(2)}</td>
                 <td className="r"><b>{fmt(s.gross_total)}</b></td>
-                <td><EgoalBadge sale={s} /></td>
+                <td>
+                  <EgoalBadge sale={s} />
+                  {s.egoal_status === 'failed' && (
+                    <button className="btn btn-primary btn-sm" style={{ marginLeft: 6 }} disabled={resending[s.id]} onClick={() => resend(s)}>
+                      {resending[s.id] ? 'Sending…' : 'Resend'}
+                    </button>
+                  )}
+                </td>
                 <td className="r"><button className="btn btn-ghost btn-sm" onClick={() => reprint(s)}>Reprint</button></td>
               </tr>
             ))}
