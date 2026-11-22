@@ -92,6 +92,8 @@ Offline mode is **explicitly out of scope** for v1 (may revisit later). Internet
 | Variation code | **Letters-only, typed fresh each sale, NO autocomplete** | Many codes are very similar — autocomplete would cause wrong selections |
 | Items | Simple list of **types** (Shawl, Kaftan, Carpet, …), owner-managed, **no price stored** | Pricing is per-sale/bargained |
 | Roles | **Owner + cashier**, enforced via RLS | Owner manages items/sees all shops/reports/closes day; cashier sells only at assigned shop |
+| Manager role (2026-11-22) | **Manager** = cashier + add/hide items + view/print Reports, assigned shop(s) only | Shop lead without full owner access. Items list is shared by all shops. eGoal "Retry failed" stays owner-only |
+| Line details (2026-11-22) | Optional free-text `sale_items.note` (≤120 chars, e.g. "stoned") | Shown on receipt, Today list, CSV, daily email. Not sent to eGoal (eGoal takes invoice totals only) |
 | Excel import | **Deferred** | v1 seeds/manages a simple item list directly; bulk Excel import can come later |
 
 ### Cost summary
@@ -117,11 +119,11 @@ Contact: reshiehandcrafts@gmail.com · +971 50 626 3796 · @reshiehandicrafts
 ## 7. Data model (v1, Postgres / Supabase)
 
 - **`shops`** — RAK, AUH, AUH2 (code, name, location, TRN, `egoal_*` codes).
-- **`profiles`** — users, linked to Supabase Auth; `role` = `owner` | `cashier`; assigned shop(s).
+- **`profiles`** — users, linked to Supabase Auth; `role` = `owner` | `manager` | `cashier`; assigned shop(s).
 - **`items`** — product *types*. Fields: name, category, active. **No price.**
 - **`cash_sessions`** — one per shop per business date. opening_cash, opened_by, opened_at, closing_cash, closed_at. **The gate that unlocks selling.**
 - **`sales`** — shop_id, session_id, cashier_id, receipt_no, payment_method (`cash` | `card`), gross_total, net_total, vat_total, created_at.
-- **`sale_items`** — sale_id, item_id, **variation_code** (letters only), qty, unit_price (gross/VAT-incl), line_gross, line_net, line_vat.
+- **`sale_items`** — sale_id, item_id, **variation_code** (letters only), optional **note** (free text), qty, unit_price (gross/VAT-incl), line_gross, line_net, line_vat.
 - **`egoal_exports`** — one row per shop per day: payload, status, sent_at (audit trail).
 - **`event_logs`** / **`api_logs`** — audit events and HTTP request/response logs (owner-read-only).
 - **`api_clients`** — email + bcrypt password logins for the gateway's `/token` endpoint.

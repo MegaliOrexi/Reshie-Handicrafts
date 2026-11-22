@@ -62,7 +62,7 @@ function List({ session }) {
               <tr key={s.id}>
                 <td><b>{s.receipt_no}</b></td>
                 <td>{new Date(s.created_at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Dubai', hour: '2-digit', minute: '2-digit' })}</td>
-                <td className="small">{s.sale_items.map((i) => `${i.item_name} ${i.variation_code} ×${i.qty}`).join(', ')}</td>
+                <td className="small">{s.sale_items.map((i) => `${i.item_name}${i.note ? ` (${i.note})` : ''} ${i.variation_code} ×${i.qty}`).join(', ')}</td>
                 <td>{s.payment_method}</td>
                 <td className="r">{Number(s.net_total).toFixed(2)}</td>
                 <td className="r">{Number(s.vat_total).toFixed(2)}</td>

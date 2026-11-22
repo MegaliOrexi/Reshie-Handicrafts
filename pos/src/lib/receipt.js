@@ -120,6 +120,7 @@ export function receiptEscPos({ sale, items, shop, cashierName }) {
     out.push(CMD.boldOn)
     wrap(li.item_name, W).forEach((l) => line(l))
     out.push(CMD.boldOff)
+    if (li.note) wrap(li.note, W - 2).forEach((l) => line(`  ${l}`))
     line(lr(`  ${li.qty} x ${money(li.unit_price)}`, money(li.line_gross), W))
   }
   line(dash)
@@ -153,7 +154,8 @@ export function receiptHtml({ sale, items, shop, cashierName }) {
   const lines = items
     .map(
       (li) => `
-      <tr class="line"><td colspan="2">${esc(li.item_name)}</td></tr>
+      <tr class="line"><td colspan="2">${esc(li.item_name)}</td></tr>${li.note ? `
+      <tr><td colspan="2" class="sm">&nbsp;&nbsp;${esc(li.note)}</td></tr>` : ''}
       <tr><td>&nbsp;&nbsp;${li.qty} x ${money(li.unit_price)}</td><td class="r">${money(li.line_gross)}</td></tr>`,
     )
     .join('')

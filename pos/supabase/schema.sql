@@ -12,6 +12,9 @@ create extension if not exists pgcrypto;
 do $$ begin
   create type user_role as enum ('owner', 'cashier');
 exception when duplicate_object then null; end $$;
+-- 'manager' = cashier access + manage items + reports, only for their assigned shop(s).
+-- (Compared as ::text below: a new enum value can't be used as a literal in the same run.)
+alter type user_role add value if not exists 'manager';
 
 do $$ begin
   create type payment_method as enum ('cash', 'card');
@@ -116,6 +119,8 @@ create table if not exists sale_items (
   line_vat        numeric(12,2) not null
 );
 create index if not exists sale_items_sale_idx on sale_items(sale_id);
+-- Optional free-text detail typed by the cashier (e.g. "stoned", "silky"). Shown on the receipt.
+alter table sale_items add column if not exists note text check (note is null or char_length(note) <= 120);
 
 create table if not exists egoal_exports (
   id             uuid primary key default gen_random_uuid(),
@@ -147,6 +152,11 @@ $$;
 create or replace function is_owner()
 returns boolean language sql stable security definer set search_path = public as $$
   select coalesce(current_role_of(auth.uid()) = 'owner', false);
+$$;
+
+create or replace function is_manager()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(current_role_of(auth.uid())::text = 'manager', false);
 $$;
 
 create or replace function can_access_shop(p_shop uuid)
@@ -185,7 +195,8 @@ on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------
 -- create_sale: atomic sale + lines + receipt number. Idempotent on client_ref.
--- p_items: [{ "item_id": uuid, "variation_code": "ABC", "qty": 1, "unit_price": 150.00 }]
+-- p_items: [{ "item_id": uuid, "variation_code": "ABC", "qty": 1, "unit_price": 150.00, "note": "stoned" }]
+--          ("note" is optional free text)
 -- ---------------------------------------------------------------------
 create or replace function create_sale(
   p_client_ref uuid,
@@ -255,9 +266,9 @@ begin
     v_vat   := v_gross - v_net;
 
     insert into sale_items (sale_id, item_id, item_name, variation_code, qty, unit_price,
-                            line_gross, line_net, line_vat)
+                            line_gross, line_net, line_vat, note)
     values (v_sale.id, v_item.id, v_item.name, upper(v_line->>'variation_code'), v_qty, v_price,
-            v_gross, v_net, v_vat);
+            v_gross, v_net, v_vat, left(nullif(btrim(v_line->>'note'), ''), 120));
 
     v_sum_gross := v_sum_gross + v_gross;
     v_sum_net   := v_sum_net + v_net;
@@ -385,6 +396,11 @@ drop policy if exists items_read  on items;
 drop policy if exists items_owner on items;
 create policy items_read  on items for select to authenticated using (true);
 create policy items_owner on items for all    to authenticated using (is_owner()) with check (is_owner());
+-- managers may add / rename / hide items (no hard delete: old sales reference them)
+drop policy if exists items_manager_insert on items;
+drop policy if exists items_manager_update on items;
+create policy items_manager_insert on items for insert to authenticated with check (is_manager());
+create policy items_manager_update on items for update to authenticated using (is_manager()) with check (is_manager());
 
 -- cash_sessions: staff of that shop can read + open + close
 drop policy if exists cs_select on cash_sessions;
@@ -416,6 +432,7 @@ create policy egoal_owner on egoal_exports for all to authenticated using (is_ow
 grant execute on function create_sale(uuid, uuid, payment_method, jsonb) to authenticated;
 grant execute on function session_summary(uuid) to authenticated;
 grant execute on function is_owner() to authenticated;
+grant execute on function is_manager() to authenticated;
 grant execute on function can_access_shop(uuid) to authenticated;
 grant execute on function uae_today() to authenticated;
 revoke execute on function build_egoal_export(uuid, date) from public, anon, authenticated;

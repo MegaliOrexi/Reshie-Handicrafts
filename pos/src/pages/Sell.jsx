@@ -27,7 +27,7 @@ function SellScreen({ session }) {
   const clientRef = useRef(newId())
 
   // Line being edited
-  const [line, setLine] = useState({ item_id: '', unit_price: '', variation_code: '', qty: 1 })
+  const [line, setLine] = useState({ item_id: '', note: '', unit_price: '', variation_code: '', qty: 1 })
   const itemRef = useRef(null)
   const priceRef = useRef(null)
 
@@ -51,9 +51,9 @@ function SellScreen({ session }) {
     const item = items.find((i) => i.id === line.item_id)
     setCart((c) => [
       ...c,
-      { key: newId(), item_id: item.id, item_name: item.name, unit_price: round2(line.unit_price), variation_code: line.variation_code, qty: Number(line.qty) },
+      { key: newId(), item_id: item.id, item_name: item.name, unit_price: round2(line.unit_price), variation_code: line.variation_code, qty: Number(line.qty), note: line.note.trim() },
     ])
-    setLine((l) => ({ ...l, unit_price: '', variation_code: '', qty: 1 }))
+    setLine((l) => ({ ...l, note: '', unit_price: '', variation_code: '', qty: 1 }))
     priceRef.current?.focus()
   }
 
@@ -71,7 +71,7 @@ function SellScreen({ session }) {
       p_client_ref: clientRef.current,
       p_shop_id: shop.id,
       p_payment_method: payment,
-      p_items: cart.map((l) => ({ item_id: l.item_id, variation_code: l.variation_code, qty: l.qty, unit_price: l.unit_price })),
+      p_items: cart.map((l) => ({ item_id: l.item_id, variation_code: l.variation_code, qty: l.qty, unit_price: l.unit_price, note: l.note || null })),
     }
     try {
       const sale = await withRetry(async () => {
@@ -134,6 +134,13 @@ function SellScreen({ session }) {
             </select>
           </label>
           <label className="field">
+            <span>Details <span className="muted">(optional)</span></span>
+            <input
+              type="text" maxLength={120} placeholder="e.g. stoned, silky" autoComplete="off"
+              value={line.note} onChange={(e) => setLine({ ...line, note: e.target.value })} disabled={closed}
+            />
+          </label>
+          <label className="field">
             <span>Bargained price (AED, incl. VAT)</span>
             <input
               ref={priceRef} type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="0.00"
@@ -174,7 +181,7 @@ function SellScreen({ session }) {
             <tbody>
               {cart.map((l) => (
                 <tr key={l.key}>
-                  <td className="cart-item"><b>{l.item_name}</b><code className="code">{l.variation_code}</code></td>
+                  <td className="cart-item"><b>{l.item_name}</b>{l.note && <span className="muted"> · {l.note}</span>}<code className="code">{l.variation_code}</code></td>
                   <td className="r nowrap">{l.qty} × {l.unit_price.toFixed(2)}</td>
                   <td className="r nowrap"><b>{round2(l.unit_price * l.qty).toFixed(2)}</b></td>
                   <td className="r"><button className="btn btn-ghost btn-sm" onClick={() => removeLine(l.key)} title="Remove">✕</button></td>

@@ -29,7 +29,7 @@ export function AuthProvider({ children }) {
     if (!prof.active) { setError('This account has been deactivated.'); return }
 
     let allowed = allShops || []
-    if (prof.role !== 'owner') {
+    if (prof.role !== 'owner') { // cashiers + managers: assigned shops only
       const { data: links } = await supabase.from('profile_shops').select('shop_id').eq('profile_id', user.id)
       const ids = new Set((links || []).map((l) => l.shop_id))
       allowed = allowed.filter((s) => ids.has(s.id))
@@ -78,6 +78,9 @@ export function AuthProvider({ children }) {
   const value = {
     session, user: session?.user || null, profile, shops, shop, setShop, signIn, signOut, error,
     isOwner: profile?.role === 'owner',
+    isManager: profile?.role === 'manager',
+    // owner or manager: Items + Reports (a manager only ever sees their own shop(s))
+    canManage: profile?.role === 'owner' || profile?.role === 'manager',
     loading: session === undefined || (session && !profile && !error),
     refreshProfile: () => loadProfile(session?.user),
   }

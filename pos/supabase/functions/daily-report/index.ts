@@ -34,7 +34,7 @@ async function salesFor(sb: SupabaseClient, shopId: string, from: string, to: st
   const out: Sale[] = [];
   for (let page = 0; ; page++) {
     const { data, error } = await sb.from("sales")
-      .select("receipt_no, receipt_seq, created_at, payment_method, gross_total, net_total, vat_total, egoal_status, egoal_error, profiles:cashier_id(full_name, email), sale_items(item_name, variation_code, qty, line_gross), cash_sessions!inner(business_date)")
+      .select("receipt_no, receipt_seq, created_at, payment_method, gross_total, net_total, vat_total, egoal_status, egoal_error, profiles:cashier_id(full_name, email), sale_items(item_name, variation_code, note, qty, line_gross), cash_sessions!inner(business_date)")
       .eq("shop_id", shopId)
       .gte("cash_sessions.business_date", from).lte("cash_sessions.business_date", to)
       .order("created_at").range(page * 1000, page * 1000 + 999);
@@ -62,7 +62,7 @@ const egoalLine = (t: ReturnType<typeof totals>) =>
 
 const cashierOf = (s: Sale) => s.profiles?.full_name || s.profiles?.email || "";
 const timeOf = (s: Sale) => new Date(s.created_at).toLocaleTimeString("en-GB", { timeZone: "Asia/Dubai", hour12: false });
-const itemsOf = (s: Sale) => (s.sale_items ?? []).map((i: Sale) => `${i.item_name} ${i.variation_code} ×${i.qty}`).join(", ");
+const itemsOf = (s: Sale) => (s.sale_items ?? []).map((i: Sale) => `${i.item_name}${i.note ? ` (${i.note})` : ""} ${i.variation_code} ×${i.qty}`).join(", ");
 
 function invoiceCsv(shopCode: string, list: Sale[]) {
   const lines = [["business_date", "shop", "receipt_no", "time", "cashier", "payment", "items", "net", "vat", "gross", "egoal"].join(",")];

@@ -11,12 +11,13 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import SalesHistory from './pages/SalesHistory'
 
-function Guard({ children, owner = false, needShop = true }) {
-  const { user, loading, shop, isOwner, error } = useAuth()
+function Guard({ children, owner = false, manage = false, needShop = true }) {
+  const { user, loading, shop, isOwner, canManage, error } = useAuth()
   if (loading) return <div className="center-screen"><div className="spinner" /></div>
   if (!user) return <Navigate to="/login" replace />
   if (error && needShop) return <Navigate to="/shop" replace /> // /shop itself shows the error
   if (owner && !isOwner) return <Navigate to="/" replace />
+  if (manage && !canManage) return <Navigate to="/" replace />
   if (needShop && !shop) return <Navigate to="/shop" replace />
   return children
 }
@@ -34,9 +35,9 @@ export default function App() {
         <Route path="/history" element={<SalesHistory />} />
         <Route path="/close" element={<DayClose />} />
         <Route path="/settings" element={<Settings />} />
-        <Route path="/items" element={<Guard owner><Items /></Guard>} />
+        <Route path="/items" element={<Guard manage><Items /></Guard>} />
         <Route path="/staff" element={<Guard owner><Staff /></Guard>} />
-        <Route path="/reports" element={<Guard owner><Reports /></Guard>} />
+        <Route path="/reports" element={<Guard manage><Reports /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -120,7 +120,7 @@ input.inline:hover { border-color: var(--border); }
 /* Sell */
 .sell { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
 .line-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; align-items: end; }
-.line-form .field:first-child { grid-column: 1 / -1; }
+/* item type + optional details side by side, then price | code, qty | Add */
 .line-form .field-qty input { width: 100%; }
 .line-form .btn { margin-bottom: 14px; }
 .cart .empty { padding: 30px 0; text-align: center; }
@@ -168,7 +168,7 @@ input.inline:hover { border-color: var(--border); }
 @media (max-width: 1024px) {
   .sell { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .line-form { grid-template-columns: 1fr 110px; }
-  .line-form .field:first-child, .line-form .field:nth-child(2) { grid-column: 1 / -1; }
+  .line-form .field:nth-child(-n+3) { grid-column: 1 / -1; }
   .line-form .btn { grid-column: 1 / -1; margin-bottom: 0; }
   .brand-name { display: none; }
   .brand-shop { font-size: 0.85rem; max-width: 140px; }
@@ -182,4 +182,14 @@ input.inline:hover { border-color: var(--border); }
   .content { padding: 10px; }
   .table { font-size: 0.9rem; }
   .table th, .table td { padding: 6px; }
+}
+
+/* Printing a page (e.g. Reports → Print): just the content, no app chrome or buttons */
+.print-only { display: none; }
+@media print {
+  .topbar, .btn, .nav, input[type="date"] { display: none !important; }
+  .print-only { display: inline; }
+  body, .app, .content { background: #fff !important; }
+  .card { box-shadow: none !important; border: 0 !important; break-inside: avoid; }
+  .table { font-size: 11px; }
 }

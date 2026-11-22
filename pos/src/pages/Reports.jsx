@@ -13,7 +13,7 @@ const daysAgo = (n) => {
 
 export default function Reports() {
   // Reports are per shop: only the shop selected at login (switch shop to see another).
-  const { shop } = useAuth()
+  const { shop, isOwner } = useAuth()
   const [from, setFrom] = useState(daysAgo(6))
   const [to, setTo] = useState(todayUAE())
   const [rows, setRows] = useState(null)
@@ -74,16 +74,16 @@ export default function Reports() {
   }), { count: 0, gross: 0, net: 0, vat: 0, cash: 0, card: 0 })
 
   const exportCsv = async () => {
-    let q = supabase.from('sales').select('receipt_no, created_at, payment_method, gross_total, net_total, vat_total, shops(code), profiles:cashier_id(email), sale_items(item_name, variation_code, qty, unit_price, line_gross, line_net, line_vat), cash_sessions!inner(business_date)')
+    let q = supabase.from('sales').select('receipt_no, created_at, payment_method, gross_total, net_total, vat_total, shops(code), profiles:cashier_id(email), sale_items(item_name, variation_code, note, qty, unit_price, line_gross, line_net, line_vat), cash_sessions!inner(business_date)')
       .eq('shop_id', shopId)
       .gte('cash_sessions.business_date', from).lte('cash_sessions.business_date', to).order('created_at')
     const { data, error } = await q
     if (error) return setErr(error.message)
-    const head = ['business_date', 'shop', 'receipt_no', 'time', 'cashier', 'payment', 'item', 'code', 'qty', 'unit_price', 'line_gross', 'line_net', 'line_vat']
+    const head = ['business_date', 'shop', 'receipt_no', 'time', 'cashier', 'payment', 'item', 'code', 'note', 'qty', 'unit_price', 'line_gross', 'line_net', 'line_vat']
     const lines = [head.join(',')]
     for (const s of data) for (const li of s.sale_items) {
       lines.push([s.cash_sessions.business_date, s.shops.code, s.receipt_no, new Date(s.created_at).toISOString(), s.profiles?.email || '', s.payment_method,
-        JSON.stringify(li.item_name), li.variation_code, li.qty, li.unit_price, li.line_gross, li.line_net, li.line_vat].join(','))
+        JSON.stringify(li.item_name), li.variation_code, JSON.stringify(li.note || ''), li.qty, li.unit_price, li.line_gross, li.line_net, li.line_vat].join(','))
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `reshie-${shop.code}-sales-${from}-to-${to}.csv`; a.click()
@@ -93,11 +93,12 @@ export default function Reports() {
     <div className="reports">
       <div className="card">
         <div className="row gap wrap between">
-          <h2>Daily reports — {shopLabel(shop)}</h2>
+          <h2>Daily reports — {shopLabel(shop)} <span className="print-only muted small">({from} to {to})</span></h2>
           <div className="row gap wrap">
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
             <button className="btn btn-ghost" onClick={exportCsv}>Export CSV</button>
+            <button className="btn btn-ghost" onClick={() => window.print()}>Print</button>
           </div>
         </div>
         {err && <p className="error">{err}</p>}
@@ -138,7 +139,7 @@ export default function Reports() {
       <div className="card">
         <div className="row gap wrap between">
           <h2>eGoal uploads — {shopLabel(shop)}</h2>
-          {egoal?.failed + egoal?.pending > 0 && <button className="btn btn-primary btn-sm" onClick={retryFailed}>Retry failed</button>}
+          {isOwner && egoal?.failed + egoal?.pending > 0 && <button className="btn btn-primary btn-sm" onClick={retryFailed}>Retry failed</button>}
         </div>
         <p className="muted">Each sale is sent to eGoal the moment it is confirmed. Failed ones are retried automatically every 10 minutes.</p>
         {retrying && <p className="muted">{retrying}</p>}
