@@ -1,3 +1,4 @@
+// The variation code is a private internal tag — it must NEVER appear on the customer receipt.
 // Builds the receipt as a standalone HTML document (used for QZ Tray + browser print + preview).
 import { getSettings } from './settings'
 
@@ -16,7 +17,7 @@ export function receiptHtml({ sale, items, shop, cashierName }) {
     .map(
       (li) => `
       <tr class="line">
-        <td colspan="3">${esc(li.item_name)} <span class="code">${esc(li.variation_code)}</span></td>
+        <td colspan="3">${esc(li.item_name)}</td>
       </tr>
       <tr class="sub">
         <td>${li.qty} x ${money(li.unit_price)}</td>
@@ -29,9 +30,11 @@ export function receiptHtml({ sale, items, shop, cashierName }) {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(sale.receipt_no)}</title>
 <style>
-  @page { margin: 0; size: ${paperWidthMm || 80}mm auto; }
+  /* Screen (preview iframe) + QZ Tray: a centred roll-width receipt. */
+  @page { margin: 4mm; }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 3mm; width: ${width}mm; font-family: "Courier New", Courier, monospace; font-size: 11px; color: #000; }
+  html { background: #fff; }
+  body { margin: 0 auto; padding: 3mm; width: ${width}mm; max-width: 100%; font-family: "Courier New", Courier, monospace; font-size: 11px; color: #000; }
   .c { text-align: center; } .r { text-align: right; }
   h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .5px; }
   .muted { font-size: 10px; }
@@ -39,11 +42,24 @@ export function receiptHtml({ sale, items, shop, cashierName }) {
   table { width: 100%; border-collapse: collapse; }
   td { padding: 1px 0; vertical-align: top; }
   tr.line td { padding-top: 3px; font-weight: bold; }
-  .code { font-weight: normal; border: 1px solid #000; padding: 0 3px; margin-left: 3px; font-size: 10px; }
   .totals td { padding: 1px 0; }
   .grand td { font-size: 14px; font-weight: bold; padding-top: 3px; }
   .meta td { font-size: 10px; }
   .foot { margin-top: 6px; font-size: 10px; }
+  /* Browser print: use the full width of whatever paper the printer has (roll or A4). */
+  @media print {
+    body { width: auto; max-width: none; padding: 0; }
+  }
+  /* Full-size sheet (A4/Letter): scale the text up so it fills the page instead of a corner. */
+  @media print and (min-width: 120mm) {
+    body { font-size: 17px; }
+    h1 { font-size: 28px; margin-bottom: 6px; }
+    .muted, .meta td, .foot { font-size: 15px; }
+    .grand td { font-size: 22px; padding-top: 8px; }
+    td { padding: 4px 0; }
+    tr.line td { padding-top: 8px; }
+    hr { margin: 12px 0; }
+  }
 </style></head>
 <body>
   <div class="c">

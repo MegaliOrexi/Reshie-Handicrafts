@@ -20,6 +20,9 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { adminClient, isServiceCall, logEvent } from "../_shared/log.ts";
 import { type InternalPayload, toEgoalBody } from "../_shared/egoal.ts";
 import { escapeHtml, sendEmail } from "../_shared/email.ts";
+import type {
+  ExportError, ExportRequest, ExportResponse, ExportSaleResult, SalesAccepted, SalesResult, TokenResult,
+} from "../_shared/models.ts";
 
 const GATEWAY = `${Deno.env.get("SUPABASE_URL")}/functions/v1/egoal-gateway`;
 const MAX_ATTEMPTS = 10;
@@ -28,15 +31,15 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
+const json = (body: ExportResponse | ExportError, status = 200) => Response.json(body, { status, headers: cors });
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const sb = adminClient();
 
-  let body: { sale_id?: string; shop_id?: string } = {};
+  let body: Partial<{ sale_id: string; shop_id: string }> = {};
   try {
-    body = (await req.json()) ?? {};
+    body = ((await req.json()) as ExportRequest | null) ?? {};
   } catch (_) { /* empty body = retry job */ }
 
   // ------------------------------------------------------------ who is calling?
@@ -90,9 +93,9 @@ Deno.serve(async (req) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: Deno.env.get("GATEWAY_CLIENT_EMAIL"), password: Deno.env.get("GATEWAY_CLIENT_PASSWORD") }),
       });
-      const j = await res.json().catch(() => ({}));
-      if (res.ok && j.access_token) token = j.access_token;
-      else tokenError = `token endpoint HTTP ${res.status}: ${j.error ?? "no token"}`;
+      const j = (await res.json().catch(() => ({}))) as Partial<TokenResult>;
+      if (res.ok && j.ok && "access_token" in j && j.access_token) token = j.access_token;
+      else tokenError = `token endpoint HTTP ${res.status}: ${("error" in j && j.error) || "no token"}`;
     } catch (e) {
       tokenError = `token endpoint unreachable: ${(e as Error).message}`;
     }
@@ -110,16 +113,16 @@ Deno.serve(async (req) => {
   }
 
   // ------------------------------------------------------------ send each sale
-  const results: Array<Record<string, unknown>> = [];
+  const results: ExportSaleResult[] = [];
   for (const row of rows) {
-    let patch: Record<string, unknown>;
+    let patch: Omit<ExportSaleResult, "sale_id" | "receipt_no">;
     if (!row.body) {
       patch = { egoal_status: "skipped", egoal_attempts: row.attempts, egoal_error: "shop has no eGoal codes" };
     } else if (!token) {
       patch = { egoal_status: "failed", egoal_attempts: row.attempts, egoal_error: tokenError };
     } else {
       let status = 0;
-      let j: Record<string, unknown> = {};
+      let j: Partial<SalesResult> & Record<string, unknown> = {};
       try {
         const res = await fetch(`${GATEWAY}/sales`, {
           method: "POST",
@@ -127,14 +130,15 @@ Deno.serve(async (req) => {
           body: JSON.stringify(row.body),
         });
         status = res.status;
-        j = await res.json().catch(() => ({}));
+        j = (await res.json().catch(() => ({}))) as typeof j;
       } catch (e) {
         j = { error: `gateway unreachable: ${(e as Error).message}` };
       }
-      if (status === 200 && j.ok) {
+      if (status === 200 && j.ok === true) {
+        const ok = j as SalesAccepted;
         patch = {
           egoal_status: "sent", egoal_sent_at: new Date().toISOString(), egoal_attempts: row.attempts,
-          egoal_error: j.stub ? "stub mode: EGOAL_ENV not set, nothing sent" : j.egoal_env === "uat" ? "sent to UAT (test), not LIVE" : null,
+          egoal_error: ok.stub ? "stub mode: EGOAL_ENV not set, nothing sent" : ok.egoal_env === "uat" ? "sent to UAT (test), not LIVE" : null,
         };
       } else {
         const err = (j.errors as string[] | undefined)?.join("; ") ?? (j.error as string | undefined) ?? `HTTP ${status}`;
@@ -145,7 +149,7 @@ Deno.serve(async (req) => {
     await sb.from("sales").update(patch).eq("id", row.id);
     await logEvent(sb, {
       event: `egoal.sale.${patch.egoal_status}`, level: patch.egoal_status === "failed" ? "error" : "info",
-      shop_id: row.shop_id, ref: row.ref, message: (patch.egoal_error as string) ?? `Uploaded ${row.receipt_no}`,
+      shop_id: row.shop_id, ref: row.ref, message: patch.egoal_error ?? `Uploaded ${row.receipt_no}`,
       data: { sale_id: row.id, attempts: row.attempts },
     });
     results.push({ sale_id: row.id, receipt_no: row.receipt_no, ...patch });

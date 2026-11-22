@@ -23,6 +23,9 @@ import { adminClient, asJson, headersToObject, logApi, logEvent } from "../_shar
 import { signToken, TOKEN_TTL_SECONDS, verifyToken } from "../_shared/jwt.ts";
 import { type EgoalBody, egoalEnv, postToEgoal, validateEgoalBody } from "../_shared/egoal.ts";
 import { b64, escapeHtml, sendEmail } from "../_shared/email.ts";
+import type {
+  GatewayError, SalesAccepted, SalesRequest, SalesUpstreamError, SalesValidationError, TokenRequest, TokenResponse,
+} from "../_shared/models.ts";
 
 const sb = adminClient();
 
@@ -37,7 +40,10 @@ Deno.serve(async (req) => {
   let ref: string | null = null;
 
   // Every response goes through here so the inbound request/response pair is logged.
-  const respond = async (status: number, payload: Record<string, unknown>, error: string | null = null) => {
+  // T = the response model (models.ts); correlation_id is added here.
+  const respond = async <T extends { correlation_id: string } = GatewayError>(
+    status: number, payload: Omit<T, "correlation_id">, error: string | null = null,
+  ) => {
     await logApi(sb, {
       correlation_id: correlationId, direction: "inbound", service: `gateway.${route}`,
       method: req.method, url: url.pathname, request_headers: headersToObject(req.headers),
@@ -51,7 +57,7 @@ Deno.serve(async (req) => {
 
   // ---------------------------------------------------------------- /token
   if (route === "token") {
-    const { email, password } = (body ?? {}) as { email?: string; password?: string };
+    const { email, password } = (body ?? {}) as Partial<TokenRequest>;
     if (!email || !password) return respond(400, { ok: false, error: "email and password are required" }, "missing credentials");
 
     const { data: id, error } = await sb.rpc("verify_api_client", { p_email: email, p_password: password });
@@ -63,7 +69,7 @@ Deno.serve(async (req) => {
     clientId = id as string;
     try {
       const token = await signToken(clientId, email);
-      return respond(200, { ok: true, access_token: token, token_type: "Bearer", expires_in: TOKEN_TTL_SECONDS });
+      return respond<TokenResponse>(200, { ok: true, access_token: token, token_type: "Bearer", expires_in: TOKEN_TTL_SECONDS });
     } catch (e) {
       return respond(500, { ok: false, error: "token signing failed" }, (e as Error).message);
     }
@@ -79,13 +85,13 @@ Deno.serve(async (req) => {
       return respond(401, { ok: false, error: "invalid or expired token" }, "invalid token");
     }
 
-    const eg = body as EgoalBody;
+    const eg = body as SalesRequest;
     ref = eg && typeof eg === "object" ? `${eg.outlet_code ?? "?"}/${eg.transaction_date ?? "?"}` : null;
 
     const errors = validateEgoalBody(body);
     if (errors.length) {
       await failureEmail({ ref, body: eg, error: `Rejected before sending: ${errors.join("; ")}`, status: 422, responseText: "" });
-      return respond(422, { ok: false, errors }, errors.join("; "));
+      return respond<SalesValidationError>(422, { ok: false, errors }, errors.join("; "));
     }
 
     const call = await postToEgoal(eg);
@@ -99,12 +105,12 @@ Deno.serve(async (req) => {
     if (!call.ok) {
       await failureEmail({ ref, body: eg, error: call.error ?? "unknown error", status: call.status, responseText: call.responseText });
       const status = call.status && call.status >= 400 && call.status < 500 ? call.status : 502;
-      return respond(status, {
-        ok: false, error: call.error, egoal_env: egoalEnv(), egoal_status: call.status, egoal_response: asJson(call.responseText),
+      return respond<SalesUpstreamError>(status, {
+        ok: false, error: call.error, egoal_env: egoalEnv(), egoal_status: call.status, egoal_response: asJson(call.responseText) as SalesUpstreamError["egoal_response"],
       }, call.error);
     }
-    return respond(200, {
-      ok: true, stub: call.stub, egoal_env: egoalEnv(), egoal_status: call.status, egoal_response: asJson(call.responseText),
+    return respond<SalesAccepted>(200, {
+      ok: true, stub: call.stub, egoal_env: egoalEnv(), egoal_status: call.status, egoal_response: asJson(call.responseText) as SalesAccepted["egoal_response"],
       invoices: eg.transaction_count,
     });
   }

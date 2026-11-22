@@ -11,28 +11,60 @@
 //
 // This is the ONLY file that knows eGoal's format.
 
-export interface EgoalTransaction {
-  invoice_no: string;
-  trans_net_sales: number;
-  trans_tax_amount: number;
-  trans_gross_amount: number;
-  trans_discount_amount: number;
-  sales_channel: string;
-  transaction_time?: string;
-  transaction_type?: "SALES" | "RETURN" | string;
-  trans_return_amount?: number;
-  quantity?: number;
-  currency?: string;
-  shift?: string;
-  payment_methods?: { payment_method_name: string; payment_amount: number }[];
+// ------------------------------------------------------------ request body
+// Field rules from the eGoal spec. All money is AED decimal; header totals must equal the
+// signed sum of the invoices (RETURN subtracts), except return_amount which is a plain sum.
+
+export type EgoalTransactionType = "SALES" | "RETURN";
+/** Retail: "Store" | "Online". (F&B "DineIn"/delivery partners don't apply to us.) */
+export type EgoalSalesChannel = "Store" | "Online";
+
+export interface EgoalPaymentMethod {
+  /** e.g. "Cash", "Card", "Online" */
+  payment_method_name: string;
+  payment_amount: number;
 }
 
+export interface EgoalTransaction {
+  /** required, unique within the payload */
+  invoice_no: string;
+  /** required, excl. VAT */
+  trans_net_sales: number;
+  /** required */
+  trans_tax_amount: number;
+  /** required */
+  trans_gross_amount: number;
+  /** required (0 for us — prices are bargained) */
+  trans_discount_amount: number;
+  /** required */
+  sales_channel: EgoalSalesChannel | string;
+  /** optional, HH:mm:ss 24h, default 00:00:00 */
+  transaction_time?: string;
+  /** optional, default SALES, case-insensitive */
+  transaction_type?: EgoalTransactionType | string;
+  /** optional, positive on RETURN, default 0 */
+  trans_return_amount?: number;
+  /** optional, total items, default 0 */
+  quantity?: number;
+  /** optional, e.g. "AED" */
+  currency?: string;
+  /** optional, e.g. "Morning" */
+  shift?: string;
+  /** optional, default [] (eGoal: structure to be confirmed before go-live) */
+  payment_methods?: EgoalPaymentMethod[];
+}
+
+/** POST body for /salestransactioninvoice — one outlet, one business day. */
 export interface EgoalBody {
   concessionaire_code: string;
+  /** store unit, e.g. "FF62" */
   outlet_code: string;
   tenant_code: string;
+  /** e.g. "alhamra", "cmsouk" */
   mall_code: string;
+  /** YYYY-MM-DD, not in the future */
   transaction_date: string;
+  /** must equal transactions.length */
   transaction_count: number;
   net_sales: number;
   gross_amount: number;
@@ -41,6 +73,18 @@ export interface EgoalBody {
   return_amount: number;
   transactions: EgoalTransaction[];
 }
+
+// ------------------------------------------------------------ response body
+// eGoal documents status codes only (201 inserted · 4xx validation failure · 5xx server error),
+// NOT a response body. We keep whatever comes back (via asJson): parsed JSON, or { raw: text }
+// when it isn't JSON, or null when empty. Tighten this once real UAT responses are in api_logs.
+export type EgoalResponse =
+  | { message?: string; error?: string; errors?: unknown; raw?: string; [k: string]: unknown }
+  | unknown[]
+  | string
+  | number
+  | boolean
+  | null;
 
 /** Internal payload built by build_egoal_export() in Postgres. */
 export interface InternalPayload {

@@ -168,16 +168,14 @@ function SellScreen({ session }) {
         ) : (
           <table className="table">
             <thead>
-              <tr><th>Item</th><th>Code</th><th className="r">Qty</th><th className="r">Price</th><th className="r">Total</th><th></th></tr>
+              <tr><th>Item</th><th className="r">Qty × Price</th><th className="r">Total</th><th></th></tr>
             </thead>
             <tbody>
               {cart.map((l) => (
                 <tr key={l.key}>
-                  <td>{l.item_name}</td>
-                  <td><code className="code">{l.variation_code}</code></td>
-                  <td className="r">{l.qty}</td>
-                  <td className="r">{l.unit_price.toFixed(2)}</td>
-                  <td className="r">{round2(l.unit_price * l.qty).toFixed(2)}</td>
+                  <td className="cart-item"><b>{l.item_name}</b><code className="code">{l.variation_code}</code></td>
+                  <td className="r nowrap">{l.qty} × {l.unit_price.toFixed(2)}</td>
+                  <td className="r nowrap"><b>{round2(l.unit_price * l.qty).toFixed(2)}</b></td>
                   <td className="r"><button className="btn btn-ghost btn-sm" onClick={() => removeLine(l.key)} title="Remove">✕</button></td>
                 </tr>
               ))}
