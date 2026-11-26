@@ -28,9 +28,10 @@ select cron.schedule('nightly-backup', '0 21 * * *', $$
   );
 $$);
 
--- 3) 00:00 UAE (20:00 UTC) — daily sales email, one per shop, for the day that just ended
+-- 3) 06:00 UAE (02:00 UTC) — daily sales email, one per shop, for the business day that just ended
+--    (a business day runs 06:00 → 05:59 UAE, so late weekend sales after midnight are included)
 select cron.unschedule('daily-report') where exists (select 1 from cron.job where jobname = 'daily-report');
-select cron.schedule('daily-report', '0 20 * * *', $$
+select cron.schedule('daily-report', '0 2 * * *', $$
   select net.http_post(
     url     := 'https://<PROJECT_REF>.supabase.co/functions/v1/daily-report',
     headers := '{"Content-Type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}'::jsonb,
@@ -38,10 +39,10 @@ select cron.schedule('daily-report', '0 20 * * *', $$
   );
 $$);
 
--- 4) 00:05 UAE (20:05 UTC) every night — monthly sales email, one per shop. The function only sends on
+-- 4) 06:05 UAE (02:05 UTC) every morning — monthly sales email, one per shop. The function only sends on
 --    the 1st (UAE date) and reports the whole previous month; on other days it does nothing.
 select cron.unschedule('monthly-report') where exists (select 1 from cron.job where jobname = 'monthly-report');
-select cron.schedule('monthly-report', '5 20 * * *', $$
+select cron.schedule('monthly-report', '5 2 * * *', $$
   select net.http_post(
     url     := 'https://<PROJECT_REF>.supabase.co/functions/v1/daily-report',
     headers := '{"Content-Type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}'::jsonb,

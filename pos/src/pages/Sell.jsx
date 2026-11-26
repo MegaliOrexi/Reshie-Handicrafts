@@ -214,7 +214,7 @@ function SellScreen({ session }) {
 
 function humanError(err) {
   const m = String(err?.message || err)
-  if (m.includes('day not opened')) return 'The day is not open yet. Enter opening cash first.'
+  if (m.includes('day not opened')) return 'A new business day has started (06:00). Refresh the page to close the previous day and open today.'
   if (m.includes('day already closed')) return 'The day has been closed. No more sales today.'
   if (m.toLowerCase().includes('fetch')) return 'No connection. The sale was NOT saved — check the internet and press Confirm again.'
   return m

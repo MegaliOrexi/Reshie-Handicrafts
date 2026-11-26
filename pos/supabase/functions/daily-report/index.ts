@@ -1,8 +1,8 @@
 // Supabase Edge Function: daily-report — sales emails to ALERT_EMAIL_TO, ONE EMAIL PER SHOP.
 //
-//   Daily   (pg_cron 00:00 UAE):   POST {}                       → yesterday's sales, per shop:
+//   Daily   (pg_cron 06:00 UAE):   POST {}                       → yesterday's sales, per shop:
 //           every invoice, totals, cash reconciliation, eGoal upload status. CSV attached.
-//   Monthly (pg_cron 00:00 UAE):   POST {"period":"month"}       → only does anything on the 1st (UAE):
+//   Monthly (pg_cron 06:05 UAE):   POST {"period":"month"}       → only does anything on the 1st (UAE):
 //           the previous month per shop: day-by-day table, totals, eGoal status. CSV of every invoice.
 //
 // Manual (service-role key):  {"date":"YYYY-MM-DD"}   or   {"period":"month","month":"YYYY-MM"}

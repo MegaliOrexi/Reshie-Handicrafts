@@ -166,11 +166,27 @@ returns boolean language sql stable security definer set search_path = public as
                  where ps.profile_id = auth.uid() and ps.shop_id = p_shop);
 $$;
 
--- Business date in UAE time
+-- BUSINESS date in UAE time. A business day runs 06:00 → 05:59 UAE, so sales after midnight
+-- (shops open late on weekends) still belong to the evening's day. Used by create_sale, the
+-- open-the-day policy and the till. Change the 6 hours here to move the cut-off.
 create or replace function uae_today()
 returns date language sql stable as $$
-  select (now() at time zone 'Asia/Dubai')::date;
+  select ((now() at time zone 'Asia/Dubai') - interval '6 hours')::date;
 $$;
+
+-- A new day can only be opened once every earlier day of that shop is closed.
+create or replace function cash_session_require_prev_closed()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_open date;
+begin
+  select business_date into v_open from cash_sessions
+   where shop_id = new.shop_id and closed_at is null and business_date < new.business_date
+   order by business_date limit 1;
+  if found then
+    raise exception 'previous day not closed: close % first', v_open;
+  end if;
+  return new;
+end $$;
 
 -- Auto-create a profile row whenever a user signs up / is invited
 create or replace function handle_new_user()
@@ -550,6 +566,10 @@ begin
   end if;
   return new;
 end $$;
+
+drop trigger if exists cash_session_prev_closed on cash_sessions;
+create trigger cash_session_prev_closed before insert on cash_sessions
+  for each row execute function cash_session_require_prev_closed();
 
 drop trigger if exists cash_session_log on cash_sessions;
 create trigger cash_session_log after insert or update on cash_sessions

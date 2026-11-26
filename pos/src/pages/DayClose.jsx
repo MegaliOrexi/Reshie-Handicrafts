@@ -9,7 +9,7 @@ export default function DayClose() {
   return <DayGate>{({ session, refresh }) => <CloseScreen session={session} refresh={refresh} />}</DayGate>
 }
 
-function CloseScreen({ session, refresh }) {
+export function CloseScreen({ session, refresh }) {
   const { user, shop } = useAuth()
   const [sum, setSum] = useState(null)
   const [closing, setClosing] = useState(session.closing_cash ?? '')
@@ -82,7 +82,7 @@ function CloseScreen({ session, refresh }) {
         {err && <p className="error">{err}</p>}
         {!isClosed && (
           <button className={`btn btn-lg ${confirm ? 'btn-danger' : 'btn-primary'}`} disabled={busy || closing === '' || !sum}>
-            {busy ? 'Closing…' : confirm ? 'Yes, close the day (no more sales today)' : 'Close the day'}
+            {busy ? 'Closing…' : confirm ? `Yes, close ${session.business_date} (no more sales on it)` : 'Close the day'}
           </button>
         )}
         {confirm && !busy && <button type="button" className="btn btn-ghost" onClick={() => setConfirm(false)}>Cancel</button>}

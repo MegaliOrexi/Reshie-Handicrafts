@@ -26,7 +26,7 @@ Two distinct things that share one brand and (eventually) one domain:
 
 1. **Login** — staff authenticate.
 2. **Shop selection** — choose one of the three shops (see §6).
-3. **Open the day** — staff must enter the day's **opening cash holdings** before anything else. Selling stays **locked** until this "cash session" exists for that shop + date.
+3. **Open the day** — staff must enter the day's **opening cash holdings** before anything else. Selling stays **locked** until this "cash session" exists for that shop + date. A **business day runs 06:00 → 05:59 UAE** (`uae_today()`), so late weekend sales after midnight stay on the evening's day. If an earlier day was never closed, the till shows **its close screen first**; a DB trigger blocks opening a new day until every earlier day is closed.
 4. **Sell** — for each line item the cashier:
    - picks an **item type** (Shawl, Kaftan, Carpet, …),
    - types the **bargained price** (final amount, **VAT included** — there are no fixed prices, everything is negotiated),
@@ -94,6 +94,7 @@ Offline mode is **explicitly out of scope** for v1 (may revisit later). Internet
 | Roles | **Owner + cashier**, enforced via RLS | Owner manages items/sees all shops/reports/closes day; cashier sells only at assigned shop |
 | Manager role (2026-11-22) | **Manager** = cashier + add/hide items + view/print Reports, assigned shop(s) only | Shop lead without full owner access. Items list is shared by all shops. eGoal "Retry failed" stays owner-only |
 | Line details (2026-11-22) | Optional free-text `sale_items.note` (≤120 chars, e.g. "stoned") | Shown on receipt, Today list, CSV, daily email. Not sent to eGoal (eGoal takes invoice totals only) |
+| Business day | **06:00 → 05:59 UAE; close previous day before opening a new one** | Shops trade past midnight on weekends; no auto-close (user, 2026-11-26) |
 | Excel import | **Deferred** | v1 seeds/manages a simple item list directly; bulk Excel import can come later |
 
 ### Cost summary
@@ -151,7 +152,7 @@ eGoal is **Aldar's mall sales-reporting platform** (a tenant lease obligation). 
 
 Flow: `egoal-export` (cron) → our **`egoal-gateway`** (`/token`: email+password from `api_clients` → our HS256 JWT; `/sales`: Bearer JWT → validates → eGoal). Every gateway request/response and every outbound call is logged in **`api_logs`** (secrets redacted); business events (receipt created/printed, day open/close, logins, exports, emails) go to **`event_logs`**.
 
-**Emails** (Resend, `_shared/email.ts`) go to `ALERT_EMAIL_TO` (default reshiehandicrafts@gmail.com): till uploads alert once when the **same invoice fails 3 times** and once more when it hits 10 and retries stop (egoal-export sends `X-Alert: off` so the gateway doesn't email each failure; other gateway callers still get per-failure emails, de-duped 1/shop/day/hour); `daily-report` at 00:00 UAE — **one email per shop** with every invoice of the day; and on the **1st at 00:05 UAE** — one email per shop for the previous month.
+**Emails** (Resend, `_shared/email.ts`) go to `ALERT_EMAIL_TO` (default reshiehandicrafts@gmail.com): till uploads alert once when the **same invoice fails 3 times** and once more when it hits 10 and retries stop (egoal-export sends `X-Alert: off` so the gateway doesn't email each failure; other gateway callers still get per-failure emails, de-duped 1/shop/day/hour); `daily-report` at **06:00 UAE** (after the business day ends) — **one email per shop** with every invoice of the day; and on the **1st at 06:05 UAE** — one email per shop for the previous month.
 
 **Reports are per shop**: the Reports page shows only the shop selected at login (RLS also scopes cashiers to their shops).
 
