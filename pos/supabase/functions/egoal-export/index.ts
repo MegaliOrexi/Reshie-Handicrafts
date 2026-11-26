@@ -11,7 +11,9 @@
 //   egoal_sale_payload → toEgoalBody (one invoice; header totals = that invoice)
 //   → egoal-gateway /token (email + password) → /sales (Bearer) → eGoal
 // The result is stored on the sale (egoal_status / egoal_error / egoal_sent_at) + event_logs.
-// The gateway logs every request/response in api_logs and emails ALERT_EMAIL_TO on failure.
+// The gateway logs every request/response in api_logs. Alerts: we send X-Alert: off so the gateway
+// does not email each failure; instead ONE email when the same invoice has failed 3 times, and one
+// more if it reaches MAX_ATTEMPTS (retries stop — owner uses "Retry failed" in Reports).
 //
 // Deploy:  supabase functions deploy egoal-export --no-verify-jwt   (we check the caller ourselves)
 // Secrets: GATEWAY_CLIENT_EMAIL, GATEWAY_CLIENT_PASSWORD (an api_clients login)
@@ -26,6 +28,8 @@ import type {
 
 const GATEWAY = `${Deno.env.get("SUPABASE_URL")}/functions/v1/egoal-gateway`;
 const MAX_ATTEMPTS = 10;
+/** Email the owner once when the SAME invoice has failed this many times (and again when retries stop). */
+const ALERT_AFTER_FAILURES = 3;
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -126,7 +130,8 @@ Deno.serve(async (req) => {
       try {
         const res = await fetch(`${GATEWAY}/sales`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          // X-Alert: off — the gateway must not email every single failure; we email after repeated ones (below).
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Alert": "off" },
           body: JSON.stringify(row.body),
         });
         status = res.status;
@@ -152,6 +157,29 @@ Deno.serve(async (req) => {
       shop_id: row.shop_id, ref: row.ref, message: patch.egoal_error ?? `Uploaded ${row.receipt_no}`,
       data: { sale_id: row.id, attempts: row.attempts },
     });
+    // Repeated-failure alert: once at the 3rd failed attempt of this invoice, and once when retries stop.
+    if (patch.egoal_status === "failed" && (row.attempts === ALERT_AFTER_FAILURES || row.attempts === MAX_ATTEMPTS)) {
+      const final = row.attempts >= MAX_ATTEMPTS;
+      const reqJson = JSON.stringify(row.body, null, 2);
+      await sendEmail(sb, {
+        kind: final ? "egoal.sale_gave_up" : "egoal.sale_repeated_failure", ref: row.ref,
+        subject: final
+          ? `⛔ eGoal upload STOPPED after ${row.attempts} attempts — ${row.ref}`
+          : `⚠ eGoal upload failed ${row.attempts} times — ${row.ref}`,
+        html: `<h2 style="color:#b00020">${final ? "eGoal upload stopped retrying" : "eGoal upload keeps failing"}</h2>
+               <p><b>Invoice:</b> ${escapeHtml(row.receipt_no)}<br>
+                  <b>Shop / date:</b> ${escapeHtml(row.ref)}<br>
+                  <b>Failed attempts:</b> ${row.attempts}<br>
+                  <b>Last error:</b> ${escapeHtml(patch.egoal_error ?? "")}</p>
+               <p>${final
+                 ? "Automatic retries have stopped for this invoice. Fix the cause, then press <b>Retry failed</b> in POS → Reports."
+                 : `It is retried automatically every 10 minutes (up to ${MAX_ATTEMPTS} attempts). You'll get one more email if it reaches ${MAX_ATTEMPTS}.`}
+                  Full request/response: search api_logs for ref ${escapeHtml(row.ref.split("/").slice(0, 2).join("/"))}.</p>
+               <h3>Request</h3><pre>${escapeHtml(reqJson.slice(0, 15000))}</pre>`,
+        text: `eGoal upload of ${row.receipt_no} (${row.ref}) failed ${row.attempts} times: ${patch.egoal_error ?? ""}`,
+      });
+    }
+
     results.push({ sale_id: row.id, receipt_no: row.receipt_no, ...patch });
   }
 

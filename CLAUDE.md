@@ -112,7 +112,7 @@ Offline mode is **explicitly out of scope** for v1 (may revisit later). Internet
 WTC is two eGoal units → two POS shops, each with its own day/cash/receipts. **Sharjah (Central Souq) was removed from the POS** on 2026-11-17 (deactivated in `schema.sql`, not deleted). The marketing site's shop list is unchanged.
 
 Business name on receipts is per shop (`shops.legal_name`): **RAK = Reshie Nov. & Gifts LLC**; AUH/AUH2 = **Reshie Antiques & Gifts**. The legal name is the receipt title (no "Reshie Handicrafts" brand line), followed by one address line (`shops.address`, falling back to `location`).
-Contact: reshiehandcrafts@gmail.com · +971 50 626 3796 · @reshiehandicrafts
+Contact: reshiehandicrafts@gmail.com · +971 50 626 3796 · @reshiehandicrafts
 
 ---
 
@@ -147,11 +147,11 @@ Receipt must show: business name, shop name + location, **TRN** (per shop — to
 
 ## 9. eGoal integration
 
-eGoal is **Aldar's mall sales-reporting platform** (a tenant lease obligation). API: `POST .../v2api/api[/uat]/salestransactioninvoice` with header totals + invoices (`x-api-key` auth). **We post ONE SALE PER REQUEST, in real time** (user decision 2026-11-17): the till calls `egoal-export {sale_id}` after `create_sale`; status lives on `sales.egoal_status`; pg_cron retries every 10 min (max 10); owner can "Retry failed" in Reports. `claim_egoal_sales` row-locks to prevent double posting. eGoal docs don't define repeat posts for the same unit+day — verify in UAT. (`egoal_exports` = old nightly batch, kept for history.) Header totals must equal the invoice sums exactly (adapter sums in fils). Shops without eGoal codes in `shops.egoal_*` are marked `skipped`. Mapping + HTTP client live only in `pos/supabase/functions/_shared/egoal.ts`. **eGoal credentials live in Supabase secrets, never in the frontend.**
+eGoal is **Aldar's mall sales-reporting platform** (a tenant lease obligation). API: `POST .../v2api/api[/uat]/salestransactioninvoice` with header totals + invoices (`x-api-key` auth). **We post ONE SALE PER REQUEST, in real time** (user decision 2026-11-17): the till calls `egoal-export {sale_id}` after `create_sale`; status lives on `sales.egoal_status`; pg_cron retries every 10 min (max 10; any business date, not just today); owner can "Retry failed" in Reports. `claim_egoal_sales` row-locks to prevent double posting. eGoal docs don't define repeat posts for the same unit+day — verify in UAT. (`egoal_exports` = old nightly batch, kept for history.) Header totals must equal the invoice sums exactly (adapter sums in fils). Shops without eGoal codes in `shops.egoal_*` are marked `skipped`. Mapping + HTTP client live only in `pos/supabase/functions/_shared/egoal.ts`. **eGoal credentials live in Supabase secrets, never in the frontend.**
 
 Flow: `egoal-export` (cron) → our **`egoal-gateway`** (`/token`: email+password from `api_clients` → our HS256 JWT; `/sales`: Bearer JWT → validates → eGoal). Every gateway request/response and every outbound call is logged in **`api_logs`** (secrets redacted); business events (receipt created/printed, day open/close, logins, exports, emails) go to **`event_logs`**.
 
-**Emails** (Resend, `_shared/email.ts`) go to `ALERT_EMAIL_TO` (default reshiehandcrafts@gmail.com): failed eGoal uploads (request + response attached, de-duped to 1/shop/day/hour); `daily-report` at 00:00 UAE — **one email per shop** with every invoice of the day; and on the **1st at 00:05 UAE** — one email per shop for the previous month.
+**Emails** (Resend, `_shared/email.ts`) go to `ALERT_EMAIL_TO` (default reshiehandicrafts@gmail.com): till uploads alert once when the **same invoice fails 3 times** and once more when it hits 10 and retries stop (egoal-export sends `X-Alert: off` so the gateway doesn't email each failure; other gateway callers still get per-failure emails, de-duped 1/shop/day/hour); `daily-report` at 00:00 UAE — **one email per shop** with every invoice of the day; and on the **1st at 00:05 UAE** — one email per shop for the previous month.
 
 **Reports are per shop**: the Reports page shows only the shop selected at login (RLS also scopes cashiers to their shops).
 
@@ -174,17 +174,17 @@ Flow: `egoal-export` (cron) → our **`egoal-gateway`** (`/token`: email+passwor
 
 - [x] **Supabase Project URL + anon (publishable) key** — received 2026-11-14, wired in `pos/.env` (git-ignored).
 - [ ] **Run `pos/supabase/schema.sql`** in the Supabase SQL editor, create the owner user, set role = owner (see pos/README.md §1).
-- [ ] **Deploy** POS to Vercel (Root Directory = `pos`) + domain `pos.reshiehandicrafts.com`.
-- [ ] **Nightly jobs**: deploy the two Edge Functions, create `backups` bucket, run `pos/supabase/cron.sql`.
+- [ ] **Deploy** POS to Vercel (Root Directory = `pos`) + subdomain `pos.reshienoveltiesandgifts.com` (DNS at Namecheap). **Note:** the live domain is `reshienoveltiesandgifts.com` (GitHub Pages); `reshiehandicrafts.com` does not resolve.
+- [x] **Scheduled jobs** — done 2026-11-26: pg_cron + pg_net enabled, `backups` bucket created, `cron.sql` run (egoal-export every 10 min, nightly-backup, daily-report, monthly-report).
 - [x] **TRN** — received 2026-11-22: `100304794900003` (one company TRN, all shops; set in `schema.sql`).
 - [ ] **OK on the receipt header** (drafted from the site; user to tweak).
 - [ ] **QZ Tray install** on a test shop PC + the **printer's name** (to test real printing).
 - [x] **eGoal API docs** — received 2026-11-15 (Aldar invoice-wise sales API: https://aldar.egoalprime.com/apidocsv3/option2.html). Implemented in `pos/supabase/functions/_shared/egoal.ts`.
-- [ ] **Email**: Resend account + verify `reshiehandicrafts.com` DNS; set `RESEND_API_KEY` / `EMAIL_FROM`. Confirm alert address spelling (`reshiehandcrafts@gmail.com`).
+- [x] **Email** (done 2026-11-26): Resend account + verified `reshienoveltiesandgifts.com` DNS (Namecheap); set `RESEND_API_KEY` / `EMAIL_FROM`. Alert address confirmed 2026-11-26: `reshiehandicrafts@gmail.com` (old misspelling `reshiehandcrafts@` removed from POS).
 - [ ] **Gateway**: `supabase secrets set --env-file supabase/functions/.env` + `select create_api_client(...)` with the password from that file.
 - [x] **eGoal credentials** — received 2026-11-17. Key in `pos/supabase/functions/.env` (git-ignored); unit codes seeded in `schema.sql`. **`EGOAL_ENV=uat` — UAT only until eGoal signs off.**
 - [ ] **UAT sign-off**: user sends ≥ 1 month of test sales (`npm run egoal:send -- file.csv --send`), then tells eGoal. Then `EGOAL_ENV=live`.
-- [ ] **Printing on hold** (user, 2026-11-17) — no receipt printing for now.
+- [x] **Printing** — working via **RawBT** (Android) on test devices (`pos/src/lib/print.js`); QZ Tray remains the desktop option.
 
 ---
 

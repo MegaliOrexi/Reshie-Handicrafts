@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "egoal:send": "node --experimental-strip-types --no-warnings scripts/egoal-send.mjs"
+    "egoal:send": "node --experimental-strip-types --no-warnings scripts/egoal-send.mjs",
+    "egoal:bulk": "node --experimental-strip-types --no-warnings scripts/egoal-bulk.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",

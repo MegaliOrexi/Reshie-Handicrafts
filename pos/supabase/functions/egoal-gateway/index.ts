@@ -6,7 +6,8 @@
 //
 //   POST /functions/v1/egoal-gateway/sales
 //        Authorization: Bearer <access_token>
-//        body = eGoal invoice-wise sales body (one shop, one business day)
+//        body = eGoal invoice-wise sales body (one shop, one business day),
+//               or an ARRAY of such bodies (e.g. a whole month) — forwarded to eGoal as one call
 //     →  200 { ok: true, correlation_id, egoal_status, egoal_response }   (eGoal accepted / stub)
 //        422 { ok: false, errors: [...] }                                   (failed our pre-checks)
 //        4xx/502 { ok: false, error, egoal_status, egoal_response }         (eGoal rejected / unreachable)
@@ -85,16 +86,35 @@ Deno.serve(async (req) => {
       return respond(401, { ok: false, error: "invalid or expired token" }, "invalid token");
     }
 
+    // Accepts one day object, or an ARRAY of day objects (e.g. a whole month) sent in one eGoal call.
+    // Callers that send their own alerts (egoal-export: email only after repeated failures) pass X-Alert: off.
+    const alerts = (req.headers.get("x-alert") ?? "").toLowerCase() !== "off";
     const eg = body as SalesRequest;
-    ref = eg && typeof eg === "object" ? `${eg.outlet_code ?? "?"}/${eg.transaction_date ?? "?"}` : null;
+    const many = Array.isArray(body) ? (body as EgoalBody[]) : null;
+    if (many) {
+      const dates = many.map((d) => d?.transaction_date).filter(Boolean).sort();
+      ref = `${many[0]?.outlet_code ?? "?"}/${dates[0] ?? "?"}..${dates.at(-1) ?? "?"}`;
+    } else {
+      ref = eg && typeof eg === "object" ? `${eg.outlet_code ?? "?"}/${eg.transaction_date ?? "?"}` : null;
+    }
 
-    const errors = validateEgoalBody(body);
+    const errors = many
+      ? (many.length ? many.flatMap((d, i) => validateEgoalBody(d).map((e) => `[${i}] ${d?.transaction_date ?? "?"}: ${e}`)) : ["array is empty"])
+      : validateEgoalBody(body);
+    if (many) {
+      const seen = new Set<string>();
+      for (const d of many) {
+        const k = `${d?.outlet_code}|${d?.transaction_date}`;
+        if (seen.has(k)) errors.push(`duplicate day ${k} in array`);
+        seen.add(k);
+      }
+    }
     if (errors.length) {
-      await failureEmail({ ref, body: eg, error: `Rejected before sending: ${errors.join("; ")}`, status: 422, responseText: "" });
+      if (alerts) await failureEmail({ ref, body: eg, error: `Rejected before sending: ${errors.join("; ")}`, status: 422, responseText: "" });
       return respond<SalesValidationError>(422, { ok: false, errors }, errors.join("; "));
     }
 
-    const call = await postToEgoal(eg);
+    const call = await postToEgoal(many ?? eg);
     await logApi(sb, {
       correlation_id: correlationId, direction: "outbound", service: "egoal", method: "POST",
       url: call.url ?? "(stub — EGOAL_ENV not set)", request_headers: call.requestHeaders,
@@ -103,7 +123,7 @@ Deno.serve(async (req) => {
     });
 
     if (!call.ok) {
-      await failureEmail({ ref, body: eg, error: call.error ?? "unknown error", status: call.status, responseText: call.responseText });
+      if (alerts) await failureEmail({ ref, body: eg, error: call.error ?? "unknown error", status: call.status, responseText: call.responseText });
       const status = call.status && call.status >= 400 && call.status < 500 ? call.status : 502;
       return respond<SalesUpstreamError>(status, {
         ok: false, error: call.error, egoal_env: egoalEnv(), egoal_status: call.status, egoal_response: asJson(call.responseText) as SalesUpstreamError["egoal_response"],
@@ -111,7 +131,7 @@ Deno.serve(async (req) => {
     }
     return respond<SalesAccepted>(200, {
       ok: true, stub: call.stub, egoal_env: egoalEnv(), egoal_status: call.status, egoal_response: asJson(call.responseText) as SalesAccepted["egoal_response"],
-      invoices: eg.transaction_count,
+      invoices: many ? many.reduce((t, d) => t + (d.transaction_count || 0), 0) : eg.transaction_count,
     });
   }
 

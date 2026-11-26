@@ -139,7 +139,7 @@ export function receiptEscPos({ sale, items, shop, cashierName }) {
   if (shop.receipt_footer) center(shop.receipt_footer)
   center('Thank you for shopping with us!')
   center('@reshiehandicrafts')
-  center('reshiehandcrafts@gmail.com')
+  center('reshiehandicrafts@gmail.com')
 
   out.push(CMD.feed(4), CMD.cut)
   return out.join('')
@@ -211,7 +211,7 @@ export function receiptHtml({ sale, items, shop, cashierName }) {
     Prices include 5% VAT.<br>
     ${shop.receipt_footer ? esc(shop.receipt_footer) + '<br>' : ''}
     Thank you for shopping with us!<br>
-    @reshiehandicrafts<br>reshiehandcrafts@gmail.com
+    @reshiehandicrafts<br>reshiehandicrafts@gmail.com
   </div>
 </body></html>`
 }

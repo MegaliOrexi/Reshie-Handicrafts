@@ -218,7 +218,7 @@ export function egoalEnv(): EgoalEnv {
   return e === "uat" || e === "live" ? e : "stub";
 }
 
-export async function postToEgoal(body: EgoalBody): Promise<EgoalCall> {
+export async function postToEgoal(body: EgoalBody | EgoalBody[]): Promise<EgoalCall> {
   const env = egoalEnv();
   const url = env === "stub" ? null : EGOAL_URLS[env];
   const apiKey = Deno.env.get("EGOAL_API_KEY");

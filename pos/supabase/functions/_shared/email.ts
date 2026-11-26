@@ -3,7 +3,7 @@
 //   RESEND_API_KEY  — required; without it emails are skipped (and logged as skipped).
 //   EMAIL_FROM      — e.g. "Reshie POS <pos@reshiehandicrafts.com>" (domain verified in Resend).
 //                     Default "onboarding@resend.dev" only delivers to the Resend account's own address.
-//   ALERT_EMAIL_TO  — comma-separated recipients. Default: reshiehandcrafts@gmail.com
+//   ALERT_EMAIL_TO  — comma-separated recipients. Default: reshiehandicrafts@gmail.com
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { asJson, logApi, logEvent } from "./log.ts";
 
@@ -28,7 +28,7 @@ const RESEND_URL = "https://api.resend.com/emails";
 export async function sendEmail(sb: SupabaseClient, e: EmailInput): Promise<{ ok: boolean; error?: string }> {
   const key = Deno.env.get("RESEND_API_KEY");
   const from = Deno.env.get("EMAIL_FROM") ?? "Reshie POS <onboarding@resend.dev>";
-  const to = (Deno.env.get("ALERT_EMAIL_TO") ?? "reshiehandcrafts@gmail.com")
+  const to = (Deno.env.get("ALERT_EMAIL_TO") ?? "reshiehandicrafts@gmail.com")
     .split(",").map((s) => s.trim()).filter(Boolean);
 
   if (e.dedupeMinutes) {
