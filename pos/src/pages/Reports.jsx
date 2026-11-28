@@ -11,7 +11,92 @@ const todayUAE = () => daysAgo(0)
 // CSV time column in UAE local time, e.g. 2026-11-28 19:22:05
 const uaeStamp = (iso) => new Date(new Date(iso).getTime() + 4 * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
+// Sale lines for one shop + business-date range (used by the manager view and CSV export).
+const fetchSaleLines = (shopId, from, to) => supabase.from('sales')
+  .select('receipt_no, created_at, payment_method, gross_total, net_total, vat_total, shops(code), profiles:cashier_id(email), sale_items(item_name, variation_code, note, qty, unit_price, line_gross, line_net, line_vat), cash_sessions!inner(business_date)')
+  .eq('shop_id', shopId)
+  .gte('cash_sessions.business_date', from).lte('cash_sessions.business_date', to).order('created_at')
+
+const downloadCsv = (data, shop, from, to) => {
+  const head = ['business_date', 'shop', 'receipt_no', 'time_uae', 'cashier', 'payment', 'item', 'code', 'note', 'qty', 'unit_price', 'line_gross', 'line_net', 'line_vat']
+  const lines = [head.join(',')]
+  for (const s of data) for (const li of s.sale_items) {
+    lines.push([s.cash_sessions.business_date, s.shops.code, s.receipt_no, uaeStamp(s.created_at), s.profiles?.email || '', s.payment_method,
+      JSON.stringify(li.item_name), li.variation_code, JSON.stringify(li.note || ''), li.qty, li.unit_price, li.line_gross, li.line_net, li.line_vat].join(','))
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `reshie-${shop.code}-sales-${from}-to-${to}.csv`; a.click()
+}
+
 export default function Reports() {
+  const { isOwner } = useAuth()
+  // Managers see items sold only — no opening/closing cash, reconciliation or eGoal.
+  return isOwner ? <OwnerReports /> : <ManagerSales />
+}
+
+function ManagerSales() {
+  const { shop } = useAuth()
+  const [from, setFrom] = useState(daysAgo(6))
+  const [to, setTo] = useState(todayUAE())
+  const [data, setData] = useState(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    setErr(''); setData(null)
+    fetchSaleLines(shop.id, from, to).then(({ data, error }) => error ? setErr(error.message) : setData(data))
+  }, [from, to, shop.id])
+
+  const lines = (data || []).flatMap((s) => s.sale_items.map((li, i) => ({ s, li, key: `${s.receipt_no}-${i}` })))
+  const qty = lines.reduce((a, { li }) => a + Number(li.qty), 0)
+  const total = lines.reduce((a, { li }) => round2(a + Number(li.line_gross)), 0)
+
+  return (
+    <div className="reports">
+      <div className="card">
+        <div className="row gap wrap between">
+          <h2>Items sold — {shopLabel(shop)} <span className="print-only muted small">({from} to {to})</span></h2>
+          <div className="row gap wrap">
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            <button className="btn btn-ghost" disabled={!data} onClick={() => downloadCsv(data, shop, from, to)}>Export CSV</button>
+            <button className="btn btn-ghost" onClick={() => window.print()}>Print</button>
+          </div>
+        </div>
+        {err && <p className="error">{err}</p>}
+        {!data && !err ? <div className="spinner" /> : (
+          <table className="table">
+            <thead>
+              <tr><th>Date</th><th>Receipt</th><th>Time</th><th>Item</th><th>Code</th><th>Note</th><th className="r">Qty</th><th className="r">Price</th><th className="r">Total</th></tr>
+            </thead>
+            <tbody>
+              {lines.map(({ s, li, key }) => (
+                <tr key={key}>
+                  <td>{s.cash_sessions.business_date}</td>
+                  <td><b>{s.receipt_no}</b></td>
+                  <td>{uaeStamp(s.created_at).slice(11, 16)}</td>
+                  <td>{li.item_name}</td>
+                  <td>{li.variation_code}</td>
+                  <td className="small">{li.note || ''}</td>
+                  <td className="r">{li.qty}</td>
+                  <td className="r">{Number(li.unit_price).toFixed(2)}</td>
+                  <td className="r">{Number(li.line_gross).toFixed(2)}</td>
+                </tr>
+              ))}
+              {lines.length === 0 && <tr><td colSpan={9} className="muted">No sales in this range.</td></tr>}
+            </tbody>
+            {lines.length > 0 && (
+              <tfoot>
+                <tr><th>Total</th><th colSpan={5}>{data.length} sale(s)</th><th className="r">{qty}</th><th></th><th className="r">{fmt(total)}</th></tr>
+              </tfoot>
+            )}
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function OwnerReports() {
   // Reports are per shop: only the shop selected at login (switch shop to see another).
   const { shop, isOwner } = useAuth()
   const [from, setFrom] = useState(daysAgo(6))
@@ -74,19 +159,9 @@ export default function Reports() {
   }), { count: 0, gross: 0, net: 0, vat: 0, cash: 0, card: 0 })
 
   const exportCsv = async () => {
-    let q = supabase.from('sales').select('receipt_no, created_at, payment_method, gross_total, net_total, vat_total, shops(code), profiles:cashier_id(email), sale_items(item_name, variation_code, note, qty, unit_price, line_gross, line_net, line_vat), cash_sessions!inner(business_date)')
-      .eq('shop_id', shopId)
-      .gte('cash_sessions.business_date', from).lte('cash_sessions.business_date', to).order('created_at')
-    const { data, error } = await q
+    const { data, error } = await fetchSaleLines(shopId, from, to)
     if (error) return setErr(error.message)
-    const head = ['business_date', 'shop', 'receipt_no', 'time_uae', 'cashier', 'payment', 'item', 'code', 'note', 'qty', 'unit_price', 'line_gross', 'line_net', 'line_vat']
-    const lines = [head.join(',')]
-    for (const s of data) for (const li of s.sale_items) {
-      lines.push([s.cash_sessions.business_date, s.shops.code, s.receipt_no, uaeStamp(s.created_at), s.profiles?.email || '', s.payment_method,
-        JSON.stringify(li.item_name), li.variation_code, JSON.stringify(li.note || ''), li.qty, li.unit_price, li.line_gross, li.line_net, li.line_vat].join(','))
-    }
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `reshie-${shop.code}-sales-${from}-to-${to}.csv`; a.click()
+    downloadCsv(data, shop, from, to)
   }
 
   return (
