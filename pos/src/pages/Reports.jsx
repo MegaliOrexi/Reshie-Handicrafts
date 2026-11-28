@@ -5,11 +5,11 @@ import { fmt, round2 } from '../lib/vat'
 import { EgoalBadge } from './SalesHistory'
 import { shopLabel } from '../lib/shop'
 
-const todayUAE = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
-const daysAgo = (n) => {
-  const d = new Date(); d.setDate(d.getDate() - n)
-  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
-}
+// Business day runs 06:00 → 05:59 UAE (UTC+4, no DST) — same as the server's uae_today().
+const daysAgo = (n) => new Date(Date.now() + (4 - 6) * 3600_000 - n * 86400_000).toISOString().slice(0, 10)
+const todayUAE = () => daysAgo(0)
+// CSV time column in UAE local time, e.g. 2026-11-28 19:22:05
+const uaeStamp = (iso) => new Date(new Date(iso).getTime() + 4 * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
 export default function Reports() {
   // Reports are per shop: only the shop selected at login (switch shop to see another).
@@ -79,10 +79,10 @@ export default function Reports() {
       .gte('cash_sessions.business_date', from).lte('cash_sessions.business_date', to).order('created_at')
     const { data, error } = await q
     if (error) return setErr(error.message)
-    const head = ['business_date', 'shop', 'receipt_no', 'time', 'cashier', 'payment', 'item', 'code', 'note', 'qty', 'unit_price', 'line_gross', 'line_net', 'line_vat']
+    const head = ['business_date', 'shop', 'receipt_no', 'time_uae', 'cashier', 'payment', 'item', 'code', 'note', 'qty', 'unit_price', 'line_gross', 'line_net', 'line_vat']
     const lines = [head.join(',')]
     for (const s of data) for (const li of s.sale_items) {
-      lines.push([s.cash_sessions.business_date, s.shops.code, s.receipt_no, new Date(s.created_at).toISOString(), s.profiles?.email || '', s.payment_method,
+      lines.push([s.cash_sessions.business_date, s.shops.code, s.receipt_no, uaeStamp(s.created_at), s.profiles?.email || '', s.payment_method,
         JSON.stringify(li.item_name), li.variation_code, JSON.stringify(li.note || ''), li.qty, li.unit_price, li.line_gross, li.line_net, li.line_vat].join(','))
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
