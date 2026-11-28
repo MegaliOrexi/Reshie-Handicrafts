@@ -187,7 +187,7 @@ input.inline:hover { border-color: var(--border); }
 /* Printing a page (e.g. Reports → Print): just the content, no app chrome or buttons */
 .print-only { display: none; }
 @media print {
-  .topbar, .btn, .nav, input[type="date"] { display: none !important; }
+  .topbar, .btn, .nav, .no-print, input[type="date"] { display: none !important; }
   .print-only { display: inline; }
   body, .app, .content { background: #fff !important; }
   .card { box-shadow: none !important; border: 0 !important; break-inside: avoid; }

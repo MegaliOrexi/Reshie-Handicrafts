@@ -7,7 +7,7 @@ import Sell from './pages/Sell'
 import DayClose from './pages/DayClose'
 import Items from './pages/Items'
 import Staff from './pages/Staff'
-import Reports from './pages/Reports'
+import Reports, { DailySummary } from './pages/Reports'
 import Settings from './pages/Settings'
 import SalesHistory from './pages/SalesHistory'
 
@@ -37,7 +37,8 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/items" element={<Guard manage><Items /></Guard>} />
         <Route path="/staff" element={<Guard owner><Staff /></Guard>} />
-        <Route path="/reports" element={<Guard manage><Reports /></Guard>} />
+        <Route path="/reports" element={<Reports />} />
+        <Route path="/daily" element={<Guard owner><DailySummary /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

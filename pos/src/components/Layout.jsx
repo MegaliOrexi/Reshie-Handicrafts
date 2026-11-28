@@ -21,7 +21,8 @@ export default function Layout() {
           <NavLink to="/" end>Sell</NavLink>
           <NavLink to="/history">Today</NavLink>
           <NavLink to="/close">Day Close</NavLink>
-          {canManage && <NavLink to="/reports">Reports</NavLink>}
+          <NavLink to="/reports">Reports</NavLink>
+          {isOwner && <NavLink to="/daily">Daily summary</NavLink>}
           {canManage && <NavLink to="/items">Items</NavLink>}
           {isOwner && <NavLink to="/staff">Staff</NavLink>}
           <NavLink to="/settings">Printer</NavLink>

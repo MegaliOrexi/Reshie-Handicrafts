@@ -8,16 +8,33 @@ import { shopLabel } from '../lib/shop'
 // Business day runs 06:00 → 05:59 UAE (UTC+4, no DST) — same as the server's uae_today().
 const daysAgo = (n) => new Date(Date.now() + (4 - 6) * 3600_000 - n * 86400_000).toISOString().slice(0, 10)
 const todayUAE = () => daysAgo(0)
+// First day of the month, n months back (UAE business date)
+const monthStart = (n = 0) => {
+  const [y, m] = todayUAE().split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1 - n, 1)).toISOString().slice(0, 10)
+}
 // CSV time column in UAE local time, e.g. 2026-11-28 19:22:05
 const uaeStamp = (iso) => new Date(new Date(iso).getTime() + 4 * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
-// Sale lines for one shop + business-date range (used by the manager view and CSV export).
-const fetchSaleLines = (shopId, from, to) => supabase.from('sales')
-  .select('receipt_no, created_at, payment_method, gross_total, net_total, vat_total, shops(code), profiles:cashier_id(email), sale_items(item_name, variation_code, note, qty, unit_price, line_gross, line_net, line_vat), cash_sessions!inner(business_date)')
-  .eq('shop_id', shopId)
-  .gte('cash_sessions.business_date', from).lte('cash_sessions.business_date', to).order('created_at')
+// Supabase returns at most 1000 rows per request — page through so long ranges (e.g. 3 months) are complete.
+const fetchAll = async (build) => {
+  const out = []
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await build().range(i, i + 999)
+    if (error) return { data: null, error }
+    out.push(...data)
+    if (data.length < 1000) return { data: out, error: null }
+  }
+}
 
-const downloadCsv = (data, shop, from, to) => {
+// Every sale (with its lines) for one shop + business-date range, oldest first.
+const fetchSaleLines = (shopId, from, to) => fetchAll(() => supabase.from('sales')
+  .select('id, receipt_no, created_at, payment_method, gross_total, net_total, vat_total, shops(code), profiles:cashier_id(email), sale_items(item_name, variation_code, note, qty, unit_price, line_gross, line_net, line_vat), cash_sessions!inner(business_date)')
+  .eq('shop_id', shopId)
+  .gte('cash_sessions.business_date', from).lte('cash_sessions.business_date', to)
+  .order('created_at').order('id'))
+
+const downloadCsv = (data, shop, from, to, tag = '') => {
   const head = ['business_date', 'shop', 'receipt_no', 'time_uae', 'cashier', 'payment', 'item', 'code', 'note', 'qty', 'unit_price', 'line_gross', 'line_net', 'line_vat']
   const lines = [head.join(',')]
   for (const s of data) for (const li of s.sale_items) {
@@ -25,79 +42,128 @@ const downloadCsv = (data, shop, from, to) => {
       JSON.stringify(li.item_name), li.variation_code, JSON.stringify(li.note || ''), li.qty, li.unit_price, li.line_gross, li.line_net, li.line_vat].join(','))
   }
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `reshie-${shop.code}-sales-${from}-to-${to}.csv`; a.click()
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `reshie-${shop.code}-sales${tag}-${from}-to-${to}.csv`; a.click()
 }
 
+const sumSales = (list) => list.reduce((a, s) => {
+  const g = Number(s.gross_total)
+  a.count++; a.gross = round2(a.gross + g); a.net = round2(a.net + Number(s.net_total)); a.vat = round2(a.vat + Number(s.vat_total))
+  if (s.payment_method === 'cash') a.cash = round2(a.cash + g); else a.card = round2(a.card + g)
+  return a
+}, { count: 0, gross: 0, net: 0, vat: 0, cash: 0, card: 0 })
+
+const PAY_LABEL = { all: 'Cash + card', cash: 'Cash only', card: 'Card only' }
+
+// Reports (all roles): every sale for the shop selected at login, grouped by business day,
+// filterable by date range and cash/card. RLS scopes cashiers/managers to their own shop(s).
 export default function Reports() {
-  const { isOwner } = useAuth()
-  // Managers see items sold only — no opening/closing cash, reconciliation or eGoal.
-  return isOwner ? <OwnerReports /> : <ManagerSales />
-}
-
-function ManagerSales() {
   const { shop } = useAuth()
   const [from, setFrom] = useState(daysAgo(6))
   const [to, setTo] = useState(todayUAE())
+  const [pay, setPay] = useState('all') // all | cash | card
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
 
   useEffect(() => {
+    let live = true
     setErr(''); setData(null)
-    fetchSaleLines(shop.id, from, to).then(({ data, error }) => error ? setErr(error.message) : setData(data))
+    fetchSaleLines(shop.id, from, to).then(({ data, error }) => { if (live) error ? setErr(error.message) : setData(data) })
+    return () => { live = false }
   }, [from, to, shop.id])
 
-  const lines = (data || []).flatMap((s) => s.sale_items.map((li, i) => ({ s, li, key: `${s.receipt_no}-${i}` })))
-  const qty = lines.reduce((a, { li }) => a + Number(li.qty), 0)
-  const total = lines.reduce((a, { li }) => round2(a + Number(li.line_gross)), 0)
+  const presets = [
+    ['Today', todayUAE(), todayUAE()],
+    ['Last 7 days', daysAgo(6), todayUAE()],
+    ['This month', monthStart(0), todayUAE()],
+    ['Last 3 months', monthStart(2), todayUAE()],
+  ]
+
+  const shown = (data || []).filter((s) => pay === 'all' || s.payment_method === pay)
+  const all = sumSales(data || [])
+  const tot = sumSales(shown)
+  // Group by business day, newest day first; sales within a day stay in time order.
+  const byDay = new Map()
+  for (const s of shown) {
+    const d = s.cash_sessions.business_date
+    if (!byDay.has(d)) byDay.set(d, [])
+    byDay.get(d).push(s)
+  }
+  const days = [...byDay.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))
 
   return (
     <div className="reports">
       <div className="card">
         <div className="row gap wrap between">
-          <h2>Items sold — {shopLabel(shop)} <span className="print-only muted small">({from} to {to})</span></h2>
+          <h2>Sales — {shopLabel(shop)} <span className="print-only muted small">({from} to {to} · {PAY_LABEL[pay]})</span></h2>
           <div className="row gap wrap">
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            <button className="btn btn-ghost" disabled={!data} onClick={() => downloadCsv(data, shop, from, to)}>Export CSV</button>
+            <input type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} />
+            <input type="date" value={to} min={from} onChange={(e) => e.target.value && setTo(e.target.value)} />
+            <button className="btn btn-ghost" disabled={!data} onClick={() => downloadCsv(shown, shop, from, to, pay === 'all' ? '' : `-${pay}`)}>Export CSV</button>
             <button className="btn btn-ghost" onClick={() => window.print()}>Print</button>
           </div>
         </div>
+        <div className="row gap wrap no-print" style={{ marginTop: 8 }}>
+          {presets.map(([label, f, t]) => (
+            <button key={label} className={`btn btn-sm ${from === f && to === t ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setFrom(f); setTo(t) }}>{label}</button>
+          ))}
+        </div>
+        <div className="seg no-print" style={{ marginTop: 10, maxWidth: 420 }}>
+          {[['all', 'All'], ['cash', 'Cash'], ['card', 'Card']].map(([k, label]) => (
+            <button key={k} className={pay === k ? 'on' : ''} onClick={() => setPay(k)}>{label}</button>
+          ))}
+        </div>
         {err && <p className="error">{err}</p>}
-        {!data && !err ? <div className="spinner" /> : (
-          <table className="table">
-            <thead>
-              <tr><th>Date</th><th>Receipt</th><th>Time</th><th>Item</th><th>Code</th><th>Note</th><th className="r">Qty</th><th className="r">Price</th><th className="r">Total</th></tr>
-            </thead>
-            <tbody>
-              {lines.map(({ s, li, key }) => (
-                <tr key={key}>
-                  <td>{s.cash_sessions.business_date}</td>
-                  <td><b>{s.receipt_no}</b></td>
-                  <td>{uaeStamp(s.created_at).slice(11, 16)}</td>
-                  <td>{li.item_name}</td>
-                  <td>{li.variation_code}</td>
-                  <td className="small">{li.note || ''}</td>
-                  <td className="r">{li.qty}</td>
-                  <td className="r">{Number(li.unit_price).toFixed(2)}</td>
-                  <td className="r">{Number(li.line_gross).toFixed(2)}</td>
-                </tr>
-              ))}
-              {lines.length === 0 && <tr><td colSpan={9} className="muted">No sales in this range.</td></tr>}
-            </tbody>
-            {lines.length > 0 && (
-              <tfoot>
-                <tr><th>Total</th><th colSpan={5}>{data.length} sale(s)</th><th className="r">{qty}</th><th></th><th className="r">{fmt(total)}</th></tr>
-              </tfoot>
-            )}
-          </table>
+        {data && (
+          <div className="stats">
+            <div className="stat"><span>Sales</span><b>{tot.count}</b></div>
+            <div className="stat"><span>Cash</span><b>{fmt(all.cash)}</b></div>
+            <div className="stat"><span>Card</span><b>{fmt(all.card)}</b></div>
+            <div className="stat"><span>Net</span><b>{fmt(tot.net)}</b></div>
+            <div className="stat"><span>VAT 5%</span><b>{fmt(tot.vat)}</b></div>
+            <div className="stat strong"><span>Total · {PAY_LABEL[pay]}</span><b>{fmt(tot.gross)}</b></div>
+          </div>
         )}
       </div>
+
+      {!data && !err && <div className="spinner" />}
+      {data && days.length === 0 && <div className="card"><p className="muted">No sales in this range.</p></div>}
+      {days.map(([date, sales]) => {
+        const t = sumSales(sales)
+        return (
+          <div className="card" key={date}>
+            <div className="row gap wrap between">
+              <h3>{date}</h3>
+              <span className="muted small">{t.count} sale(s) · cash {t.cash.toFixed(2)} · card {t.card.toFixed(2)} · <b>total {fmt(t.gross)}</b></span>
+            </div>
+            <table className="table">
+              <thead><tr><th>Receipt</th><th>Time</th><th>Items</th><th>Pay</th><th className="r">Net</th><th className="r">VAT</th><th className="r">Total</th></tr></thead>
+              <tbody>
+                {sales.map((s) => (
+                  <tr key={s.id}>
+                    <td><b>{s.receipt_no}</b></td>
+                    <td>{uaeStamp(s.created_at).slice(11, 16)}</td>
+                    <td className="small">{s.sale_items.map((i) => `${i.item_name}${i.note ? ` (${i.note})` : ''} ${i.variation_code} ×${i.qty}`).join(', ')}</td>
+                    <td>{s.payment_method}</td>
+                    <td className="r">{Number(s.net_total).toFixed(2)}</td>
+                    <td className="r">{Number(s.vat_total).toFixed(2)}</td>
+                    <td className="r"><b>{Number(s.gross_total).toFixed(2)}</b></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr><th colSpan={4}>Day total</th><th className="r">{t.net.toFixed(2)}</th><th className="r">{t.vat.toFixed(2)}</th><th className="r">{fmt(t.gross)}</th></tr>
+              </tfoot>
+            </table>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-function OwnerReports() {
-  // Reports are per shop: only the shop selected at login (switch shop to see another).
+// Daily summary (owner only): per business day totals, opening/closing cash reconciliation and eGoal uploads.
+export function DailySummary() {
+  // Per shop: only the shop selected at login (switch shop to see another).
   const { shop, isOwner } = useAuth()
   const [from, setFrom] = useState(daysAgo(6))
   const [to, setTo] = useState(todayUAE())
@@ -109,30 +175,25 @@ function OwnerReports() {
 
   const load = async () => {
     setErr('')
-    let q = supabase
+    const { data, error } = await supabase
       .from('cash_sessions')
       .select('*, shops(code, location, egoal_outlet_code), sales(payment_method, gross_total, net_total, vat_total)')
       .eq('shop_id', shopId)
       .gte('business_date', from).lte('business_date', to)
       .order('business_date', { ascending: false })
-    const { data, error } = await q
     if (error) return setErr(error.message)
     setRows(
       data.map((cs) => {
-        const t = cs.sales.reduce((a, s) => {
-          a.count++; a.gross = round2(a.gross + Number(s.gross_total)); a.net = round2(a.net + Number(s.net_total)); a.vat = round2(a.vat + Number(s.vat_total))
-          if (s.payment_method === 'cash') a.cash = round2(a.cash + Number(s.gross_total)); else a.card = round2(a.card + Number(s.gross_total))
-          return a
-        }, { count: 0, gross: 0, net: 0, vat: 0, cash: 0, card: 0 })
+        const t = sumSales(cs.sales)
         const expected = round2(Number(cs.opening_cash) + t.cash)
         return { ...cs, t, expected, variance: cs.closing_cash == null ? null : round2(Number(cs.closing_cash) - expected) }
       }),
     )
-    const eg = await supabase.from('sales')
+    const eg = await fetchAll(() => supabase.from('sales')
       .select('id, receipt_no, created_at, gross_total, egoal_status, egoal_attempts, egoal_error, cash_sessions!inner(business_date)')
       .eq('shop_id', shopId)
       .gte('cash_sessions.business_date', from).lte('cash_sessions.business_date', to)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false }).order('id'))
     if (eg.error) return setErr(eg.error.message)
     const count = (st) => eg.data.filter((s) => s.egoal_status === st).length
     setEgoal({
@@ -168,7 +229,7 @@ function OwnerReports() {
     <div className="reports">
       <div className="card">
         <div className="row gap wrap between">
-          <h2>Daily reports — {shopLabel(shop)} <span className="print-only muted small">({from} to {to})</span></h2>
+          <h2>Daily summary — {shopLabel(shop)} <span className="print-only muted small">({from} to {to})</span></h2>
           <div className="row gap wrap">
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
