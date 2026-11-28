@@ -6,6 +6,7 @@
 // Setup:   Storage → New bucket → name "backups", Private.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { isServiceCall } from "../_shared/log.ts";
 
 const TABLES = [
   "shops", "profiles", "profile_shops", "items",
@@ -14,11 +15,8 @@ const TABLES = [
 ];
 
 Deno.serve(async (req) => {
-  const auth = req.headers.get("Authorization") ?? "";
+  if (!isServiceCall(req)) return new Response("unauthorized", { status: 401 });
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  if (auth !== `Bearer ${serviceKey}`) {
-    return new Response("unauthorized", { status: 401 });
-  }
 
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey);
   const dump: Record<string, unknown> = { taken_at: new Date().toISOString(), tables: {} };

@@ -7,6 +7,7 @@
 // Secrets:
 //   EGOAL_ENV      — "uat" | "live" | "stub". Unset → stub (validates + logs, nothing sent).
 //                    Currently configured: uat. Switch to live only after eGoal signs off UAT.
+//   EGOAL_LIVE_OUTLETS — outlets that are already LIVE while EGOAL_ENV=uat (per-shop go-live), e.g. "FF62".
 //   EGOAL_API_KEY  — x-api-key (eGoal: same key for UAT and LIVE).
 //
 // This is the ONLY file that knows eGoal's format.
@@ -213,13 +214,19 @@ export const EGOAL_URLS = {
 
 export type EgoalEnv = keyof typeof EGOAL_URLS | "stub";
 
-export function egoalEnv(): EgoalEnv {
+/** Which eGoal environment to post to.
+ *  EGOAL_ENV          — default for every outlet: "uat" | "live" | "stub"
+ *  EGOAL_LIVE_OUTLETS — comma list of outlet codes that go LIVE even while EGOAL_ENV=uat
+ *                       (per-shop go-live, e.g. "FF62"). Ignored in stub mode. */
+export function egoalEnv(outlet?: string | null): EgoalEnv {
   const e = (Deno.env.get("EGOAL_ENV") ?? "stub").trim().toLowerCase();
-  return e === "uat" || e === "live" ? e : "stub";
+  const base: EgoalEnv = e === "uat" || e === "live" ? e : "stub";
+  if (base !== "uat" || !outlet) return base;
+  const live = (Deno.env.get("EGOAL_LIVE_OUTLETS") ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
+  return live.includes(outlet.trim().toUpperCase()) ? "live" : "uat";
 }
 
-export async function postToEgoal(body: EgoalBody | EgoalBody[]): Promise<EgoalCall> {
-  const env = egoalEnv();
+export async function postToEgoal(body: EgoalBody | EgoalBody[], env: EgoalEnv = egoalEnv()): Promise<EgoalCall> {
   const url = env === "stub" ? null : EGOAL_URLS[env];
   const apiKey = Deno.env.get("EGOAL_API_KEY");
   const requestHeaders = { "Content-Type": "application/json", "x-api-key": apiKey ?? "" };

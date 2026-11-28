@@ -114,7 +114,17 @@ Deno.serve(async (req) => {
       return respond<SalesValidationError>(422, { ok: false, errors }, errors.join("; "));
     }
 
-    const call = await postToEgoal(many ?? eg);
+    // Environment per outlet (EGOAL_LIVE_OUTLETS). X-Egoal-Env: uat forces UAT (test/bulk tools) — it
+    // can only downgrade, never promote a UAT outlet to live.
+    const outlets = [...new Set((many ?? [eg]).map((d) => d?.outlet_code ?? ""))];
+    const envs = [...new Set(outlets.map((o) => egoalEnv(o)))];
+    if (envs.length > 1) {
+      return respond(422, { ok: false, errors: ["array mixes LIVE and UAT outlets — send them separately"] }, "mixed envs");
+    }
+    let env = envs[0] ?? egoalEnv();
+    if ((req.headers.get("x-egoal-env") ?? "").toLowerCase() === "uat" && env === "live") env = "uat";
+
+    const call = await postToEgoal(many ?? eg, env);
     await logApi(sb, {
       correlation_id: correlationId, direction: "outbound", service: "egoal", method: "POST",
       url: call.url ?? "(stub — EGOAL_ENV not set)", request_headers: call.requestHeaders,
@@ -123,14 +133,14 @@ Deno.serve(async (req) => {
     });
 
     if (!call.ok) {
-      if (alerts) await failureEmail({ ref, body: eg, error: call.error ?? "unknown error", status: call.status, responseText: call.responseText });
+      if (alerts) await failureEmail({ ref, body: eg, error: call.error ?? "unknown error", status: call.status, responseText: call.responseText, env });
       const status = call.status && call.status >= 400 && call.status < 500 ? call.status : 502;
       return respond<SalesUpstreamError>(status, {
-        ok: false, error: call.error, egoal_env: egoalEnv(), egoal_status: call.status, egoal_response: asJson(call.responseText) as SalesUpstreamError["egoal_response"],
+        ok: false, error: call.error, egoal_env: env, egoal_status: call.status, egoal_response: asJson(call.responseText) as SalesUpstreamError["egoal_response"],
       }, call.error);
     }
     return respond<SalesAccepted>(200, {
-      ok: true, stub: call.stub, egoal_env: egoalEnv(), egoal_status: call.status, egoal_response: asJson(call.responseText) as SalesAccepted["egoal_response"],
+      ok: true, stub: call.stub, egoal_env: env, egoal_status: call.status, egoal_response: asJson(call.responseText) as SalesAccepted["egoal_response"],
       invoices: many ? many.reduce((t, d) => t + (d.transaction_count || 0), 0) : eg.transaction_count,
     });
   }
@@ -138,7 +148,8 @@ Deno.serve(async (req) => {
   return respond(404, { ok: false, error: "unknown route — use /token or /sales" }, "unknown route");
 
   // ----------------------------------------------------------------
-  async function failureEmail(f: { ref: string | null; body: EgoalBody; error: string; status: number | null; responseText: string }) {
+  async function failureEmail(f: { ref: string | null; body: EgoalBody; error: string; status: number | null; responseText: string; env?: string }) {
+    const envName = (f.env ?? egoalEnv(f.body?.outlet_code)).toUpperCase();
     const tx = Array.isArray(f.body?.transactions) ? f.body.transactions : [];
     const rows = tx.map((t) =>
       `<tr><td>${escapeHtml(t.invoice_no)}</td><td>${escapeHtml(t.transaction_time ?? "")}</td>` +
@@ -148,7 +159,7 @@ Deno.serve(async (req) => {
     const html = `
       <h2 style="color:#b00020">eGoal upload FAILED</h2>
       <p><b>Outlet / date:</b> ${escapeHtml(f.ref)}<br>
-         <b>eGoal environment:</b> ${egoalEnv().toUpperCase()}<br>
+         <b>eGoal environment:</b> ${envName}<br>
          <b>HTTP status:</b> ${escapeHtml(f.status ?? "no response")}<br>
          <b>Error:</b> ${escapeHtml(f.error)}<br>
          <b>Correlation id:</b> ${correlationId} (search api_logs)</p>
@@ -162,7 +173,7 @@ Deno.serve(async (req) => {
       <h3>Request</h3><pre>${escapeHtml(reqJson.slice(0, 15000))}</pre>`;
     await sendEmail(sb, {
       kind: "egoal.failure", ref: f.ref ?? undefined, dedupeMinutes: 60,
-      subject: `⚠ eGoal ${egoalEnv().toUpperCase()} upload FAILED — ${f.ref} (${f.status ?? "no response"})`,
+      subject: `⚠ eGoal ${envName} upload FAILED — ${f.ref} (${f.status ?? "no response"})`,
       html,
       text: `eGoal upload failed for ${f.ref}: ${f.error}. ${tx.length} invoice(s). Correlation id ${correlationId}.`,
       attachments: [

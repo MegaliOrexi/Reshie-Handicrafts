@@ -86,6 +86,10 @@ export function uaeYesterday(): string {
 }
 
 /** Cron / internal callers authenticate with the service-role key. */
+/** Trusted server-side caller: the service_role key, or pg_cron's X-Cron-Secret (CRON_SECRET, kept in
+ *  Supabase secrets + Vault — so the cron jobs never need the service_role key). */
 export function isServiceCall(req: Request): boolean {
-  return (req.headers.get("Authorization") ?? "") === `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`;
+  if ((req.headers.get("Authorization") ?? "") === `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`) return true;
+  const cron = Deno.env.get("CRON_SECRET") ?? "";
+  return cron.length >= 32 && (req.headers.get("x-cron-secret") ?? "") === cron;
 }

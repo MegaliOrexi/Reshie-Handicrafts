@@ -156,7 +156,7 @@ let ok = 0
 for (const d of days) {
   const res = await fetch(`${base}/sales`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tj.access_token}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tj.access_token}`, 'X-Egoal-Env': 'uat' }, // test tool: never LIVE
     body: JSON.stringify(d.body),
   })
   const j = await res.json().catch(() => ({}))

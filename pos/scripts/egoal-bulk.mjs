@@ -23,7 +23,8 @@
 //   --day YYYY-MM-DD          only this day
 //   --send                    actually POST (default is dry run)
 //   --direct                  POST straight to eGoal UAT with EGOAL_API_KEY instead of via our egoal-gateway
-//   --live                    with --direct: use the LIVE url (only after eGoal sign-off!)
+//   --live                    send to LIVE (direct: LIVE url; gateway: allow outlets in EGOAL_LIVE_OUTLETS to go live).
+//                             Without it the gateway is told X-Egoal-Env: uat, so test data never reaches LIVE.
 //   --per-day                 one API hit per day instead of one hit for the whole array
 
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
@@ -180,7 +181,8 @@ if (direct) {
   if (!tok.ok || !tj.access_token) { console.error(`✗ gateway token failed (HTTP ${tok.status}): ${tj.error ?? 'no token'} — try --direct`); process.exit(1) }
   console.log(`\nSending via egoal-gateway (${base})`)
   post = async (body) => {
-    const res = await fetch(`${base}/sales`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tj.access_token}` }, body: JSON.stringify(body) })
+    // Test data: force UAT even for outlets that are LIVE in the gateway, unless --live was given.
+    const res = await fetch(`${base}/sales`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tj.access_token}`, ...(live ? {} : { 'X-Egoal-Env': 'uat' }) }, body: JSON.stringify(body) })
     const j = await res.json().catch(() => ({}))
     return { ok: res.ok && j.ok, info: `${(j.egoal_env || '?').toUpperCase()} HTTP ${j.egoal_status ?? res.status}${j.stub ? ' (STUB — nothing sent)' : ''} ${j.error ?? (j.errors || []).join('; ')}` }
   }
