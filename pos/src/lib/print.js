@@ -51,7 +51,14 @@ const asReceipt = (r) => (typeof r === 'string' ? { html: r, raw: null } : r)
  * With QZ Tray: sends raw ESC/POS text (printer's own font — sharp, auto-cut, tiny payload),
  * or the HTML rendering if no raw version was given. Otherwise: browser print dialog.
  */
-export const isAndroid = () => /Android/i.test(navigator.userAgent || '')
+// Chrome's "Desktop site" mode drops "Android" from the user agent (it reports "X11; Linux x86_64"),
+// so also check Client Hints and treat a touch-screen Linux device as Android.
+export const isAndroid = () => {
+  const ua = navigator.userAgent || ''
+  if (/Android/i.test(ua)) return true
+  if (/android/i.test(navigator.userAgentData?.platform || '')) return true
+  return /Linux/i.test(ua) && !/CrOS/i.test(ua) && (navigator.maxTouchPoints || 0) > 0
+}
 
 /** Which method this device uses: 'qz' (PC), 'rawbt' (Android tablet/phone) or 'browser'. */
 export function printMethod() {
